@@ -45,10 +45,10 @@ type UIConfig struct {
 func Default() Config {
 	return Config{
 		App: AppConfig{
-			Name:        "Go App Template",
+			Name:        "Pigeon",
 			Env:         "development",
 			URL:         "http://localhost:8080",
-			Description: "Full-stack starter with an embedded React frontend.",
+			Description: "A full-stack Go + React application with an embedded frontend.",
 		},
 		Server: ServerConfig{
 			Host:            "0.0.0.0",
@@ -141,10 +141,10 @@ func fileExists(path string) bool {
 }
 
 const DefaultConfigYAML = `app:
-  name: Go App Template
+  name: Pigeon
   env: development
   url: http://localhost:8080
-  description: Full-stack starter with Go at the repo root and an embedded React UI.
+  description: A full-stack Go + React application with an embedded frontend.
 
 server:
   host: 0.0.0.0
@@ -163,7 +163,7 @@ ui:
 `
 
 const DefaultEnvExample = `APP_ENV=development
-APP_APP_NAME=Go App Template
+APP_APP_NAME=Pigeon
 APP_SERVER_HOST=0.0.0.0
 APP_SERVER_PORT=8080
 APP_LOGGING_LEVEL=debug

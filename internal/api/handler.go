@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/your-org/go-app-template/internal/config"
-	"github.com/your-org/go-app-template/internal/version"
+	"github.com/prasenjit-net/pigeon/internal/config"
+	"github.com/prasenjit-net/pigeon/internal/version"
 )
 
 type Handler struct {
@@ -62,11 +62,11 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Example(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, exampleResponse{
-		Title:       "Go + React starter template",
-		Summary:     "Embed a Vite-generated React application directly into the Go binary with one production build.",
+		Title:       "Pigeon",
+		Summary:     "Full-stack Go + React application with an embedded frontend shipped as a single binary.",
 		Features:    []string{"Cobra CLI commands", "Viper config + .env support", "Chi API router", "Embedded SPA serving", "React Query + Tailwind UI"},
-		Quickstart:  []string{"make install-deps", "make dev-all", "make build", "./build/<binary> serve"},
-		Repository:  "Template repository",
+		Quickstart:  []string{"make install-deps", "make dev-all", "make build", "./build/pigeon serve"},
+		Repository:  "https://github.com/prasenjit-net/pigeon",
 		FrontendDir: "ui",
 	})
 }

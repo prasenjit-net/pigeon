@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/your-org/go-app-template/internal/config"
+	"github.com/prasenjit-net/pigeon/internal/config"
 )
 
 var (

@@ -1,21 +1,14 @@
-# Go App Template
+# Pigeon
 
-A production-ready GitHub template repository for full-stack applications with:
+A full-stack Go + React application with an embedded frontend, shipped as a single binary.
 
-- Go backend at the repository root
-- React + Vite frontend in `ui/`
-- Embedded production UI served directly from the Go binary
-- Cobra CLI, Viper config, `.env` support, and a Tailwind-based admin shell modeled after the reference project
-
-The design and developer experience are intentionally based on the original reference implementation, but generalized into a reusable starter.
-
-App repository: `https://github.com/prasenjit-net/go-app-template`
+Repository: `https://github.com/prasenjit-net/pigeon`
 
 ## What You Get
 
 - `serve`, `init`, and `version` CLI commands
 - `chi`-based API routing under `/api`
-- Example endpoints at `/api/health` and `/api/example`
+- Endpoints at `/api/health`, `/api/example`, and `/api/meta`
 - Embedded React build via Go `embed`
 - Development mode with Vite proxy support
 - Structured logging with `slog`
@@ -54,7 +47,7 @@ App repository: `https://github.com/prasenjit-net/go-app-template`
 3. `ui_embed.go` embeds `ui/dist` into the Go binary.
 4. The server mounts API routes under `/api` and serves the React SPA for every other route.
 
-That gives you one deployment artifact: the compiled Go executable.
+One deployment artifact: the compiled Go executable.
 
 ## Development Workflow
 
@@ -95,7 +88,7 @@ make lint-ui    # eslint for the React app
 
 ```bash
 make build
-./build/$(basename "$PWD") serve
+./build/pigeon serve
 ```
 
 The binary contains the compiled React app. No separate Node.js server is required in production.
@@ -117,40 +110,6 @@ APP_SERVER_PORT=9090
 APP_LOGGING_LEVEL=debug
 APP_UI_DEV_PROXY_URL=http://localhost:5173
 ```
-
-## UI Notes
-
-The frontend mirrors the reference repo’s patterns:
-
-- fixed left sidebar shell
-- card-based dashboard layout
-- Tailwind utility styling with shared badges and section headers
-- light/dark/system theme toggle
-- React Query service layer for API integration
-
-The starter keeps the same feel without hard-coding the reference project’s domain-specific screens.
-
-## GitHub Template Setup
-
-GitHub template mode is a repository setting, not a tracked file. After pushing this repo:
-
-1. Open the repository on GitHub.
-2. Go to `Settings`.
-3. In `General`, enable `Template repository`.
-4. Share the repository URL so users can click `Use this template`.
-
-## Renaming After Creating a New Repo
-
-After generating a repo from this template:
-
-1. Rename the repository on GitHub.
-2. Update the Go module path:
-   ```bash
-   go mod edit -module github.com/<owner>/<new-repo>
-   go mod tidy
-   ```
-3. Update the app name in `config.yaml` and `.env`.
-4. Optionally update the UI package name in `ui/package.json`.
 
 ## Files to Review First
 
