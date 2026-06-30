@@ -2,9 +2,11 @@ import { useCallback, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { StoredIdentity } from '../store/identity'
 import { clearIdentity } from '../store/identity'
+import { markRead, unreadCount } from '../store/messages'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { useRoster, type OnlineUser } from '../hooks/useRoster'
 import { useChat } from '../hooks/useChat'
+import { usePendingMessages } from '../hooks/usePendingMessages'
 import UserList from '../components/chat/UserList'
 import ConversationPane from '../components/chat/ConversationPane'
 
@@ -15,6 +17,7 @@ interface Props {
 export default function ChatPage({ identity }: Props) {
   const navigate = useNavigate()
   const [selected, setSelected] = useState<OnlineUser | null>(null)
+  const [unreadCounts, setUnreadCounts] = useState<Map<string, number>>(new Map())
   const ownId = identity.certificate.cert.subject.id
 
   // sendRef lets useChat call send without creating a circular hook dependency.
@@ -32,7 +35,6 @@ export default function ChatPage({ identity }: Props) {
           send: (p) => sendRef.current(p),
         }
       : {
-          // Dummy args when no user is selected — chat state is never rendered.
           recipientId: '',
           recipientEncKeyJWK: {},
           ownEncPrivKeyJWK: identity.encryptionPrivateKey,
@@ -41,16 +43,48 @@ export default function ChatPage({ identity }: Props) {
         },
   )
 
+  const bumpUnread = useCallback(
+    (fromId: string) => {
+      if (selected?.id === fromId) return // conversation is open, no badge
+      setUnreadCounts((prev) => {
+        const next = new Map(prev)
+        next.set(fromId, unreadCount(fromId))
+        return next
+      })
+    },
+    [selected],
+  )
+
+  const { handlePending } = usePendingMessages({
+    ownEncPrivKeyJWK: identity.encryptionPrivateKey,
+    onDecrypted: bumpUnread,
+  })
+
   const handleMessage = useCallback(
     (msg: WsMessage) => {
       rosterHandler(msg)
+      handlePending(msg)
       chat.receiveMessage(msg)
+      // Bump unread for live incoming messages not from the current conversation.
+      if (msg.type === 'message' && typeof msg.from === 'string') {
+        bumpUnread(msg.from)
+      }
     },
-    [rosterHandler, chat.receiveMessage], // eslint-disable-line react-hooks/exhaustive-deps
+    [rosterHandler, handlePending, chat.receiveMessage, bumpUnread],
   )
 
   const { send } = useWebSocket({ certificate: identity.certificate, onMessage: handleMessage })
   sendRef.current = send
+
+  function handleSelectUser(u: OnlineUser) {
+    setSelected(u)
+    markRead(u.id)
+    setUnreadCounts((prev) => {
+      const next = new Map(prev)
+      next.set(u.id, 0)
+      return next
+    })
+  }
 
   function handleLogout() {
     clearIdentity()
@@ -73,7 +107,8 @@ export default function ChatPage({ identity }: Props) {
         <UserList
           users={roster}
           selectedId={selected?.id ?? null}
-          onSelect={(u) => { setSelected(u) }}
+          unreadCounts={unreadCounts}
+          onSelect={handleSelectUser}
           ownName={identity.name}
         />
       </div>

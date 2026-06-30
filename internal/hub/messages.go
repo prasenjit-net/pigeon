@@ -1,6 +1,9 @@
 package hub
 
-import "github.com/prasenjit-net/pigeon/internal/ca"
+import (
+	"github.com/prasenjit-net/pigeon/internal/ca"
+	"github.com/prasenjit-net/pigeon/internal/queue"
+)
 
 // Inbound message types (client → server).
 const (
@@ -10,10 +13,12 @@ const (
 
 // Outbound message types (server → client).
 const (
-	TypeRoster     = "roster"
-	TypeUserJoined = "user_joined"
-	TypeUserLeft   = "user_left"
-	TypeError      = "error"
+	TypeRoster          = "roster"
+	TypeUserJoined      = "user_joined"
+	TypeUserLeft        = "user_left"
+	TypeError           = "error"
+	TypeMessageAck      = "message_ack"
+	TypePendingMessages = "pending_messages"
 )
 
 // InboundEnvelope is the top-level wrapper for all client→server messages.
@@ -31,6 +36,7 @@ type HelloMsg struct {
 // SendMsg is sent by the client to route an encrypted message to another user.
 type SendMsg struct {
 	Type             string               `json:"type"`
+	ClientMsgID      string               `json:"clientMsgId"`      // client-assigned temp ID for ack matching
 	To               string               `json:"to"`               // recipient subject.id
 	EncryptedPayload string               `json:"encryptedPayload"` // base64url ciphertext
 	SenderCert       ca.SignedCertificate `json:"senderCert"`
@@ -62,12 +68,30 @@ type UserLeftMsg struct {
 	ID   string `json:"id"`
 }
 
-// DeliveryMsg is what the server forwards to the recipient.
+// DeliveryMsg is forwarded to the recipient for a live (online) delivery.
 type DeliveryMsg struct {
 	Type             string               `json:"type"`
+	ID               string               `json:"id"`               // server-assigned UUID
 	From             string               `json:"from"`
 	EncryptedPayload string               `json:"encryptedPayload"`
 	SenderCert       ca.SignedCertificate `json:"senderCert"`
+	Timestamp        int64                `json:"timestamp"` // Unix milliseconds
+}
+
+// MessageAckMsg is sent back to the sender after every message.
+// Status is "delivered" if the recipient was online, "queued" if offline.
+type MessageAckMsg struct {
+	Type        string `json:"type"`
+	ClientMsgID string `json:"clientMsgId"` // echoed from SendMsg
+	ServerMsgID string `json:"serverMsgId"` // server-assigned UUID
+	Status      string `json:"status"`      // "delivered" | "queued"
+	Timestamp   int64  `json:"timestamp"`
+}
+
+// PendingMessagesMsg is sent to a client on connect if they have queued messages.
+type PendingMessagesMsg struct {
+	Type     string                    `json:"type"`
+	Messages []queue.PersistedMessage  `json:"messages"`
 }
 
 // ErrorMsg is sent to the client when an error occurs.

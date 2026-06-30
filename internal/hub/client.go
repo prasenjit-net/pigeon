@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
 	"github.com/prasenjit-net/pigeon/internal/ca"
+	"github.com/prasenjit-net/pigeon/internal/queue"
 )
 
 const (
@@ -20,19 +22,17 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// Allow all origins in development; tighten in production.
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-// Client is a single WebSocket connection. It has two goroutines: readPump
-// and writePump, communicating with the hub via the send channel.
+// Client is a single WebSocket connection with read and write pump goroutines.
 type Client struct {
 	hub    *Hub
 	conn   *websocket.Conn
 	send   chan []byte
 	logger *slog.Logger
 
-	// set after successful hello handshake
+	// populated after a valid hello handshake
 	userID        string
 	name          string
 	cert          ca.SignedCertificate
@@ -40,26 +40,23 @@ type Client struct {
 	encryptionKey map[string]any
 }
 
-// ServeWS upgrades an HTTP connection to WebSocket and starts the client pumps.
+// ServeWS upgrades the HTTP connection to WebSocket and starts the pumps.
 func ServeWS(h *Hub, w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logger.Error("ws: upgrade failed", "error", err)
 		return
 	}
-
 	c := &Client{
 		hub:    h,
 		conn:   conn,
 		send:   make(chan []byte, 64),
 		logger: logger,
 	}
-
 	go c.writePump()
 	go c.readPump()
 }
 
-// readPump processes inbound messages from the WebSocket.
 func (c *Client) readPump() {
 	defer func() {
 		if c.userID != "" {
@@ -87,7 +84,6 @@ func (c *Client) readPump() {
 	}
 }
 
-// writePump drains the send channel and writes to the WebSocket.
 func (c *Client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -106,7 +102,6 @@ func (c *Client) writePump() {
 			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				return
 			}
-
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
@@ -116,14 +111,12 @@ func (c *Client) writePump() {
 	}
 }
 
-// dispatch routes a raw inbound message to the correct handler.
 func (c *Client) dispatch(raw []byte) {
 	var env InboundEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil {
 		c.sendError("bad_json", "invalid JSON")
 		return
 	}
-
 	switch env.Type {
 	case TypeHello:
 		c.handleHello(raw)
@@ -140,7 +133,6 @@ func (c *Client) handleHello(raw []byte) {
 		c.sendError("bad_hello", "invalid hello message")
 		return
 	}
-
 	if err := c.hub.CA().VerifyCertificate(msg.Certificate); err != nil {
 		c.logger.Warn("ws: rejected hello with invalid cert", "error", err)
 		c.sendError("invalid_cert", "certificate verification failed: "+err.Error())
@@ -154,6 +146,7 @@ func (c *Client) handleHello(raw []byte) {
 	c.encryptionKey = msg.Certificate.Cert.Subject.EncryptionKey
 
 	c.hub.Register(c)
+	// pending_messages and roster are sent by the hub's Run loop after Register.
 }
 
 func (c *Client) handleSend(raw []byte) {
@@ -167,26 +160,48 @@ func (c *Client) handleSend(raw []byte) {
 		c.sendError("bad_message", "invalid message payload")
 		return
 	}
-
 	if msg.To == "" || msg.EncryptedPayload == "" {
 		c.sendError("bad_message", "to and encryptedPayload are required")
 		return
 	}
 
+	// Build the persisted message (carries the server-assigned ID and timestamp).
+	pm := queue.NewMessage(c.userID, msg.To, msg.EncryptedPayload, c.cert)
+
+	// Attempt live delivery first.
 	delivery := mustMarshal(DeliveryMsg{
 		Type:             TypeMessage,
-		From:             c.userID,
-		EncryptedPayload: msg.EncryptedPayload,
-		SenderCert:       c.cert,
+		ID:               pm.ID,
+		From:             pm.From,
+		EncryptedPayload: pm.EncryptedPayload,
+		SenderCert:       pm.SenderCert,
+		Timestamp:        pm.Timestamp,
 	})
 
-	if !c.hub.Route(msg.To, delivery) {
-		c.sendError("offline", "recipient is not online")
+	var status string
+	if c.hub.Route(msg.To, delivery) {
+		status = "delivered"
+	} else {
+		// Recipient offline — store for later delivery.
+		c.hub.Queue().Push(pm)
+		status = "queued"
 	}
+
+	// Ack the sender regardless of delivery outcome.
+	c.sendMsg(mustMarshal(MessageAckMsg{
+		Type:        TypeMessageAck,
+		ClientMsgID: msg.ClientMsgID,
+		ServerMsgID: pm.ID,
+		Status:      status,
+		Timestamp:   pm.Timestamp,
+	}))
 }
 
 func (c *Client) sendError(code, message string) {
-	payload := mustMarshal(ErrorMsg{Type: TypeError, Code: code, Message: message})
+	c.sendMsg(mustMarshal(ErrorMsg{Type: TypeError, Code: code, Message: message}))
+}
+
+func (c *Client) sendMsg(payload []byte) {
 	select {
 	case c.send <- payload:
 	default:
