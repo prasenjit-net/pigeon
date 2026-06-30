@@ -9,11 +9,14 @@ import (
 	"testing"
 
 	"github.com/prasenjit-net/pigeon/internal/config"
+	"github.com/prasenjit-net/pigeon/internal/registry"
 	"github.com/prasenjit-net/pigeon/internal/version"
 )
 
 func TestHealthEndpoint(t *testing.T) {
-	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current())
+	reg := registry.New()
+	// CA is nil — Health doesn't use it.
+	router := NewRouter(config.Default(), slog.New(slog.NewTextHandler(io.Discard, nil)), version.Current(), nil, reg)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	res := httptest.NewRecorder()
 

@@ -28,6 +28,10 @@ make fmt                # go fmt
 go test ./internal/api/... -run TestHealthEndpoint -v
 ```
 
+## What This Is
+
+Pigeon is an **end-to-end encrypted browser chat application**. The server acts as a Certificate Authority and a blind message router — it signs user identities but never reads message content. All cryptography runs in the browser via the Web Crypto API.
+
 ## Architecture
 
 ### Request flow
@@ -36,33 +40,70 @@ go test ./internal/api/... -run TestHealthEndpoint -v
 HTTP request
   → chi router (server.go)
     → /api/*  → api.NewRouter  → Handler methods
-    → /*       → SPA handler (embeds ui/dist) or Vite reverse proxy (--dev mode)
+    → /ws     → hub.ServeWS   → WebSocket hub
+    → /*      → SPA handler (embeds ui/dist) or Vite reverse proxy (--dev mode)
 ```
 
-### Go backend
+### Go backend packages
 
-- **`main.go`** — entry point; passes the embedded `ui/dist` FS to `app.Execute`.
-- **`ui_embed.go`** — `//go:embed all:ui/dist` directive; `make build-ui` must run before `make build-go`.
-- **`cmd/app/`** — Cobra commands (`serve`, `init`, `version`). `root.go` wires Viper config; `serve.go` starts the HTTP server with graceful shutdown.
-- **`internal/config/`** — `Config` struct loaded from `config.yaml` → `.env`/`.env.local` → `APP_*` env vars → CLI flags (in that priority order). `config.Default()` is the source of truth for defaults.
-- **`internal/server/`** — builds the chi router, mounts `/api`, and serves the SPA or proxies to Vite when `--dev` is passed. `spaHandler` falls back to `index.html` for unknown paths (client-side routing).
-- **`internal/api/`** — `NewRouter` + `Handler`. Add new API endpoints here.
-- **`internal/version/`** — version string injected at build time via `-ldflags` in the Makefile.
-- **`internal/logging/`** — `slog`-based logger configured from `LoggingConfig`.
+- **`internal/ca/`** — RSA-PSS CA key pair. Generated once, persisted to `data/ca.key.pem`. `ca.Issue()` builds and signs user certificates. `ca.VerifyCertificate()` checks signature and expiry.
+- **`internal/registry/`** — Thread-safe in-memory map of `userId → SignedCertificate`. Populated on `/api/register`.
+- **`internal/hub/`** — WebSocket hub and per-connection client. Single hub goroutine owns the `clients` map; mutations go through channels. `client.go` has read/write pumps per connection. Handles `hello` (verify cert, add to roster), `message` (route encrypted payload to recipient), and `disconnect` (broadcast user_left).
+- **`internal/api/`** — HTTP handlers: `GET /api/ca/public-key`, `POST /api/register`, `GET /api/health`, `GET /api/meta`.
+- **`internal/config/`** — `Config` struct. `DataDir` (default `"data"`) is where the CA key is stored.
+- **`internal/server/`** — Assembles the chi router, creates CA, registry, and hub, mounts `/api` and `/ws`.
+
+### Certificate format
+
+```json
+{
+  "cert": {
+    "version": 1,
+    "subject": { "name": "Alice", "id": "<hex SHA-256 of signing key>",
+                 "signingKey": {JWK}, "encryptionKey": {JWK} },
+    "issuedAt": 1751234567, "expiresAt": 1782770567, "issuer": "pigeon"
+  },
+  "signature": "<base64url RSA-PSS over JSON of cert>"
+}
+```
+
+### WebSocket protocol
+
+Client→server: `{ type: "hello", certificate }` and `{ type: "message", to, encryptedPayload, senderCert }`.  
+Server→client: `{ type: "roster", users[] }`, `{ type: "user_joined", user }`, `{ type: "user_left", id }`, `{ type: "message", from, encryptedPayload, senderCert }`, `{ type: "error", code, message }`.
+
+### Frontend packages
+
+- **`ui/src/crypto/`** — Web Crypto API wrappers. `keys.ts`: generate/import/export RSA-PSS and RSA-OAEP key pairs. `encrypt.ts`: `encryptMessage`/`decryptMessage` (RSA-OAEP direct for ≤190 bytes; hybrid AES-256-GCM for longer). `certificate.ts`: `verifyCertificate`. `fingerprint.ts`: `fingerprintJWK` → hex SHA-256 of key material.
+- **`ui/src/store/identity.ts`** — Read/write identity (both key pairs + certificate) in `localStorage` under `pigeon.*` keys.
+- **`ui/src/hooks/`** — `useIdentity`: loads identity from localStorage. `useWebSocket`: opens `/ws`, sends `hello`, reconnects with backoff. `useRoster`: maintains online user map from WebSocket events. `useChat`: per-conversation encrypted message state; calls `encryptMessage` on send and `decryptMessage` on receive.
+- **`ui/src/pages/OnboardingPage.tsx`** — Three-step flow: name → keygen → register. On completion redirects to `/chat`.
+- **`ui/src/pages/ChatPage.tsx`** — Wires `useWebSocket`, `useRoster`, `useChat`. Left sidebar (UserList), right pane (ConversationPane or empty state).
+
+### User identity flow
+
+1. `OnboardingPage` generates two RSA key pairs via `SubtleCrypto.generateKey`.
+2. `POST /api/register` sends both public keys + name; server returns a `SignedCertificate`.
+3. Identity (private keys + certificate) saved to `localStorage`.
+4. On every page load `useIdentity` checks localStorage; redirects to `/onboarding` if absent.
+5. On `/chat`, `useWebSocket` opens `/ws` and sends `hello` with the stored certificate.
+
+### Encrypted message path
+
+```
+Sender types text
+  → encryptMessage(text, recipient.encryptionKey)   [RSA-OAEP or hybrid AES-GCM]
+  → WS send { type:"message", to, encryptedPayload }
+  → server routes raw bytes to recipient's WS connection (never decrypts)
+  → recipient receives { type:"message", from, encryptedPayload }
+  → decryptMessage(encryptedPayload, ownEncryptionPrivateKey)
+  → display plaintext
+```
 
 ### Dev vs production UI
 
-In `--dev` mode the server reverse-proxies all non-`/api` requests to the Vite dev server at `APP_UI_DEV_PROXY_URL` (default `:5173`). In production mode the binary serves the embedded `ui/dist` build directly — no separate Node process.
-
-### React frontend (`ui/`)
-
-- Vite + React 18 + TypeScript + Tailwind CSS.
-- `ui/src/services/api.ts` — all API calls via React Query.
-- `ui/src/pages/` — page-level components (`DashboardPage`, `ExamplesPage`, `SettingsPage`).
-- `ui/src/components/Layout.tsx` — fixed left sidebar shell shared by all pages.
+`make dev` / `go run . serve --dev` proxies non-`/api` non-`/ws` requests to the Vite dev server (`APP_UI_DEV_PROXY_URL`, default `:5173`). Production binary serves the embedded `ui/dist` build directly.
 
 ### Configuration precedence
 
-`config.Default()` < `config.yaml` < `.env` / `.env.local` < `APP_*` env vars < CLI flags.
-
-All env vars use the `APP_` prefix with `_` replacing `.` (e.g. `APP_SERVER_PORT=9090`).
+`config.Default()` < `config.yaml` < `.env`/`.env.local` < `APP_*` env vars < CLI flags. Key env vars: `APP_SERVER_PORT`, `APP_LOGGING_LEVEL`, `APP_DATA_DIR`, `APP_UI_DEV_PROXY_URL`.

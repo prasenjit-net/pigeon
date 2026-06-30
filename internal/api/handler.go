@@ -5,44 +5,32 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prasenjit-net/pigeon/internal/ca"
 	"github.com/prasenjit-net/pigeon/internal/config"
+	"github.com/prasenjit-net/pigeon/internal/registry"
 	"github.com/prasenjit-net/pigeon/internal/version"
 )
 
+// Handler holds dependencies for all API request handlers.
 type Handler struct {
-	config  config.Config
-	version version.Info
+	config   config.Config
+	version  version.Info
+	ca       *ca.CA
+	registry *registry.Registry
 }
+
+func NewHandler(cfg config.Config, build version.Info, authority *ca.CA, reg *registry.Registry) *Handler {
+	return &Handler{config: cfg, version: build, ca: authority, registry: reg}
+}
+
+// --- health / meta ---------------------------------------------------------
 
 type healthResponse struct {
-	Status    string       `json:"status"`
-	Service   string       `json:"service"`
-	Env       string       `json:"env"`
-	Time      time.Time    `json:"time"`
-	Version   version.Info `json:"version"`
-	Documents []string     `json:"documents"`
-}
-
-type exampleResponse struct {
-	Title       string   `json:"title"`
-	Summary     string   `json:"summary"`
-	Features    []string `json:"features"`
-	Quickstart  []string `json:"quickstart"`
-	Repository  string   `json:"repository"`
-	FrontendDir string   `json:"frontendDir"`
-}
-
-type metaResponse struct {
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Environment string       `json:"environment"`
-	URL         string       `json:"url"`
-	UIProxy     string       `json:"uiProxy"`
-	Version     version.Info `json:"version"`
-}
-
-func NewHandler(cfg config.Config, build version.Info) *Handler {
-	return &Handler{config: cfg, version: build}
+	Status  string       `json:"status"`
+	Service string       `json:"service"`
+	Env     string       `json:"env"`
+	Time    time.Time    `json:"time"`
+	Version version.Info `json:"version"`
 }
 
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
@@ -52,23 +40,15 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		Env:     h.config.App.Env,
 		Time:    time.Now().UTC(),
 		Version: h.version,
-		Documents: []string{
-			"README.md",
-			"config.yaml",
-			"ui/src/pages",
-		},
 	})
 }
 
-func (h *Handler) Example(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, exampleResponse{
-		Title:       "Pigeon",
-		Summary:     "Full-stack Go + React application with an embedded frontend shipped as a single binary.",
-		Features:    []string{"Cobra CLI commands", "Viper config + .env support", "Chi API router", "Embedded SPA serving", "React Query + Tailwind UI"},
-		Quickstart:  []string{"make install-deps", "make dev-all", "make build", "./build/pigeon serve"},
-		Repository:  "https://github.com/prasenjit-net/pigeon",
-		FrontendDir: "ui",
-	})
+type metaResponse struct {
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Environment string       `json:"environment"`
+	URL         string       `json:"url"`
+	Version     version.Info `json:"version"`
 }
 
 func (h *Handler) Meta(w http.ResponseWriter, r *http.Request) {
@@ -77,13 +57,68 @@ func (h *Handler) Meta(w http.ResponseWriter, r *http.Request) {
 		Description: h.config.App.Description,
 		Environment: h.config.App.Env,
 		URL:         h.config.App.URL,
-		UIProxy:     h.config.UI.DevProxyURL,
 		Version:     h.version,
 	})
 }
+
+// --- CA public key ---------------------------------------------------------
+
+func (h *Handler) CAPublicKey(w http.ResponseWriter, r *http.Request) {
+	jwk, err := h.ca.PublicKeyJWK()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to get CA public key")
+		return
+	}
+	respondJSON(w, http.StatusOK, jwk)
+}
+
+// --- registration ----------------------------------------------------------
+
+type registerRequest struct {
+	Name          string         `json:"name"`
+	ID            string         `json:"id"` // hex SHA-256 of signing key JWK
+	SigningKey     map[string]any `json:"signingKey"`
+	EncryptionKey map[string]any `json:"encryptionKey"`
+}
+
+func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+	var req registerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if req.Name == "" || len(req.Name) > 64 {
+		respondError(w, http.StatusBadRequest, "name must be 1–64 characters")
+		return
+	}
+	if req.ID == "" {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	if req.SigningKey == nil || req.EncryptionKey == nil {
+		respondError(w, http.StatusBadRequest, "signingKey and encryptionKey are required")
+		return
+	}
+
+	signed, err := h.ca.Issue(req.Name, req.ID, req.SigningKey, req.EncryptionKey)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "certificate issuance failed")
+		return
+	}
+
+	h.registry.Register(signed)
+	respondJSON(w, http.StatusCreated, signed)
+}
+
+// --- helpers ---------------------------------------------------------------
 
 func respondJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func respondError(w http.ResponseWriter, status int, msg string) {
+	respondJSON(w, status, map[string]string{"error": msg})
 }

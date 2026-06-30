@@ -15,7 +15,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/prasenjit-net/pigeon/internal/api"
+	"github.com/prasenjit-net/pigeon/internal/ca"
 	"github.com/prasenjit-net/pigeon/internal/config"
+	"github.com/prasenjit-net/pigeon/internal/hub"
+	"github.com/prasenjit-net/pigeon/internal/registry"
 	"github.com/prasenjit-net/pigeon/internal/version"
 )
 
@@ -29,10 +32,31 @@ type App struct {
 	logger  *slog.Logger
 	build   version.Info
 	options Options
+	hub     *hub.Hub
+	ca      *ca.CA
+	reg     *registry.Registry
 }
 
 func New(cfg config.Config, logger *slog.Logger, build version.Info, options Options) (*App, error) {
-	return &App{cfg: cfg, logger: logger, build: build, options: options}, nil
+	authority, err := ca.New(cfg.DataDir, logger)
+	if err != nil {
+		return nil, fmt.Errorf("server: init CA: %w", err)
+	}
+
+	reg := registry.New()
+
+	h := hub.New(authority, logger)
+	go h.Run()
+
+	return &App{
+		cfg:     cfg,
+		logger:  logger,
+		build:   build,
+		options: options,
+		hub:     h,
+		ca:      authority,
+		reg:     reg,
+	}, nil
 }
 
 func (a *App) Handler() http.Handler {
@@ -43,7 +67,12 @@ func (a *App) Handler() http.Handler {
 	r.Use(middleware.Heartbeat("/livez"))
 	r.Use(requestLogger(a.logger))
 
-	r.Mount("/api", api.NewRouter(a.cfg, a.logger, a.build))
+	r.Mount("/api", api.NewRouter(a.cfg, a.logger, a.build, a.ca, a.reg))
+
+	// WebSocket endpoint — no timeout middleware wrapping it.
+	r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
+		hub.ServeWS(a.hub, w, r, a.logger)
+	})
 
 	if a.options.DevMode && strings.TrimSpace(a.cfg.UI.DevProxyURL) != "" {
 		r.Handle("/*", newDevProxy(a.cfg.UI.DevProxyURL, a.logger))
@@ -59,9 +88,7 @@ func (a *App) Handler() http.Handler {
 		return r
 	}
 
-	spa := newSPAHandler(distFS)
-	r.Handle("/*", spa)
-
+	r.Handle("/*", newSPAHandler(distFS))
 	return r
 }
 
@@ -118,12 +145,10 @@ func fileExists(fsys fs.FS, name string) bool {
 		return false
 	}
 	defer file.Close()
-
 	info, err := file.Stat()
 	if err != nil {
 		return false
 	}
-
 	return !info.IsDir()
 }
 
@@ -133,11 +158,10 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			start := time.Now()
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(ww, r)
-			logger.Info("request complete",
+			logger.Info("request",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", ww.Status(),
-				"bytes", ww.BytesWritten(),
 				"duration", time.Since(start).String(),
 				"request_id", middleware.GetReqID(r.Context()),
 			)

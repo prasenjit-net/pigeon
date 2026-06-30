@@ -15,6 +15,7 @@ type Config struct {
 	Server  ServerConfig  `mapstructure:"server" yaml:"server"`
 	Logging LoggingConfig `mapstructure:"logging" yaml:"logging"`
 	UI      UIConfig      `mapstructure:"ui" yaml:"ui"`
+	DataDir string        `mapstructure:"dataDir" yaml:"dataDir"`
 }
 
 type AppConfig struct {
@@ -44,6 +45,7 @@ type UIConfig struct {
 
 func Default() Config {
 	return Config{
+		DataDir: "data",
 		App: AppConfig{
 			Name:        "Pigeon",
 			Env:         "development",
@@ -92,6 +94,7 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("logging.level", defaults.Logging.Level)
 	v.SetDefault("logging.format", defaults.Logging.Format)
 	v.SetDefault("ui.devProxyURL", defaults.UI.DevProxyURL)
+	v.SetDefault("dataDir", defaults.DataDir)
 }
 
 func Load(v *viper.Viper) (Config, error) {
