@@ -1,53 +1,39 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import NameStep from '../components/onboarding/NameStep'
 import KeygenStep, { type GeneratedKeys } from '../components/onboarding/KeygenStep'
 import RegisterStep from '../components/onboarding/RegisterStep'
 
 type Step = 'name' | 'keygen' | 'register'
 
-export default function OnboardingPage() {
-  const navigate = useNavigate()
+interface Props {
+  onRegistered: () => void
+}
+
+export default function OnboardingPage({ onRegistered }: Props) {
   const [step, setStep] = useState<Step>('name')
   const [name, setName] = useState('')
   const [keys, setKeys] = useState<GeneratedKeys | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  function handleName(n: string) {
-    setName(n)
-    setStep('keygen')
-  }
-
-  function handleKeysDone(k: GeneratedKeys) {
-    setKeys(k)
-    setStep('register')
-  }
-
-  function handleRegistered() {
-    navigate('/chat', { replace: true })
-  }
-
-  function handleError(msg: string) {
-    setError(msg)
-  }
+  const steps: Step[] = ['name', 'keygen', 'register']
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-lg p-8">
         {/* Step indicator */}
         <div className="flex items-center gap-2 mb-8">
-          {(['name', 'keygen', 'register'] as Step[]).map((s, i) => (
+          {steps.map((s, i) => (
             <div key={s} className="flex items-center gap-2">
               <div
                 className={`h-2 w-2 rounded-full transition-colors ${
                   s === step
                     ? 'bg-indigo-600'
-                    : ['name', 'keygen', 'register'].indexOf(s) < ['name', 'keygen', 'register'].indexOf(step)
+                    : steps.indexOf(s) < steps.indexOf(step)
                       ? 'bg-green-500'
                       : 'bg-gray-200 dark:bg-gray-700'
                 }`}
               />
-              {i < 2 && <div className="h-px w-6 bg-gray-200 dark:bg-gray-700" />}
+              {i < steps.length - 1 && <div className="h-px w-6 bg-gray-200 dark:bg-gray-700" />}
             </div>
           ))}
         </div>
@@ -64,12 +50,18 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {step === 'name' && <NameStep onNext={handleName} />}
+        {step === 'name' && (
+          <NameStep onNext={(n) => { setName(n); setStep('keygen') }} />
+        )}
         {step === 'keygen' && (
-          <KeygenStep name={name} onDone={handleKeysDone} onError={handleError} />
+          <KeygenStep
+            name={name}
+            onDone={(k) => { setKeys(k); setStep('register') }}
+            onError={setError}
+          />
         )}
         {step === 'register' && keys && (
-          <RegisterStep keys={keys} onDone={handleRegistered} onError={handleError} />
+          <RegisterStep keys={keys} onDone={onRegistered} onError={setError} />
         )}
       </div>
     </div>

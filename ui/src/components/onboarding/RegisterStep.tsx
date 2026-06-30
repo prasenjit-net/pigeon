@@ -51,8 +51,7 @@ export default function RegisterStep({ keys, onDone, onError }: Props) {
 
         if (!cancelled) {
           setStatus('done')
-          // Brief pause so the user sees the success state.
-          setTimeout(onDone, 800)
+          onDone()
         }
       } catch (err) {
         if (!cancelled) {

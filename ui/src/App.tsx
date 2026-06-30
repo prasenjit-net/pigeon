@@ -1,47 +1,41 @@
+import { useCallback, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { useIdentity } from './hooks/useIdentity'
+import { loadIdentity, type StoredIdentity } from './store/identity'
 import OnboardingPage from './pages/OnboardingPage'
 import ChatPage from './pages/ChatPage'
 
 function App() {
-  const identity = useIdentity()
+  // Sync lazy init — reads localStorage once on mount, no effect needed.
+  const [identity, setIdentity] = useState<StoredIdentity | null>(() => loadIdentity())
 
-  if (identity.status === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-        <svg className="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-        </svg>
-      </div>
-    )
-  }
+  // Called by OnboardingPage after registration is complete and identity is
+  // already saved to localStorage. Re-reading here updates state synchronously
+  // before the next render, so the /chat route sees identity immediately.
+  const handleRegistered = useCallback(() => {
+    setIdentity(loadIdentity())
+  }, [])
 
   return (
     <Routes>
       <Route
         path="/onboarding"
         element={
-          identity.status === 'ready'
+          identity
             ? <Navigate to="/chat" replace />
-            : <OnboardingPage />
+            : <OnboardingPage onRegistered={handleRegistered} />
         }
       />
       <Route
         path="/chat"
         element={
-          identity.status === 'ready'
-            ? <ChatPage identity={identity.identity} />
+          identity
+            ? <ChatPage identity={identity} />
             : <Navigate to="/onboarding" replace />
         }
       />
       <Route
         path="*"
-        element={
-          identity.status === 'ready'
-            ? <Navigate to="/chat" replace />
-            : <Navigate to="/onboarding" replace />
-        }
+        element={<Navigate to={identity ? '/chat' : '/onboarding'} replace />}
       />
     </Routes>
   )
