@@ -5,8 +5,8 @@ import { clearIdentity } from '../store/identity'
 import { markRead, unreadCount } from '../store/messages'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { useRoster, type OnlineUser } from '../hooks/useRoster'
-import { useChat } from '../hooks/useChat'
-import { usePendingMessages } from '../hooks/usePendingMessages'
+import { useChat, type ChatMessage } from '../hooks/useChat'
+import { useIncomingMessages } from '../hooks/useIncomingMessages'
 import UserList from '../components/chat/UserList'
 import ConversationPane from '../components/chat/ConversationPane'
 
@@ -30,47 +30,52 @@ export default function ChatPage({ identity }: Props) {
       ? {
           recipientId: selected.id,
           recipientEncKeyJWK: selected.encryptionKey,
-          ownEncPrivKeyJWK: identity.encryptionPrivateKey,
           ownCert: identity.certificate,
           send: (p) => sendRef.current(p),
         }
       : {
           recipientId: '',
           recipientEncKeyJWK: {},
-          ownEncPrivKeyJWK: identity.encryptionPrivateKey,
           ownCert: identity.certificate,
           send: () => {},
         },
   )
 
-  const bumpUnread = useCallback(
-    (fromId: string) => {
-      if (selected?.id === fromId) return // conversation is open, no badge
-      setUnreadCounts((prev) => {
-        const next = new Map(prev)
-        next.set(fromId, unreadCount(fromId))
-        return next
-      })
+  const bumpUnread = useCallback((fromId: string) => {
+    setUnreadCounts((prev) => {
+      const next = new Map(prev)
+      next.set(fromId, unreadCount(fromId))
+      return next
+    })
+  }, [])
+
+  // Fires for every incoming message regardless of which conversation (if
+  // any) is currently open — decryption and localStorage persistence must
+  // not depend on the UI selection, otherwise messages for an unopened
+  // conversation are dropped on the floor.
+  const handleIncoming = useCallback(
+    (fromId: string, msg: ChatMessage) => {
+      if (selected?.id === fromId) {
+        chat.addIncomingMessage(msg)
+      } else {
+        bumpUnread(fromId)
+      }
     },
-    [selected],
+    [selected, chat.addIncomingMessage, bumpUnread],
   )
 
-  const { handlePending } = usePendingMessages({
+  const { handleMessage: handleIncomingWs } = useIncomingMessages({
     ownEncPrivKeyJWK: identity.encryptionPrivateKey,
-    onDecrypted: bumpUnread,
+    onMessage: handleIncoming,
   })
 
   const handleMessage = useCallback(
     (msg: WsMessage) => {
       rosterHandler(msg)
-      handlePending(msg)
-      chat.receiveMessage(msg)
-      // Bump unread for live incoming messages not from the current conversation.
-      if (msg.type === 'message' && typeof msg.from === 'string') {
-        bumpUnread(msg.from)
-      }
+      handleIncomingWs(msg)
+      chat.receiveAck(msg)
     },
-    [rosterHandler, handlePending, chat.receiveMessage, bumpUnread],
+    [rosterHandler, handleIncomingWs, chat.receiveAck],
   )
 
   const { send } = useWebSocket({ certificate: identity.certificate, onMessage: handleMessage })

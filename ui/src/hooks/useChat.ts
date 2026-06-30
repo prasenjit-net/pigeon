@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { encryptMessage, decryptMessage } from '../crypto/encrypt'
+import { encryptMessage } from '../crypto/encrypt'
 import type { WsMessage } from './useWebSocket'
 import type { SignedCertificate } from '../crypto/certificate'
 import {
@@ -23,7 +23,6 @@ export interface ChatMessage {
 interface Options {
   recipientId: string
   recipientEncKeyJWK: JsonWebKey
-  ownEncPrivKeyJWK: JsonWebKey
   ownCert: SignedCertificate
   send: (payload: object) => void
 }
@@ -46,13 +45,12 @@ function storedToChat(m: PersistedMsg): ChatMessage {
   }
 }
 
-export function useChat({
-  recipientId,
-  recipientEncKeyJWK,
-  ownEncPrivKeyJWK,
-  ownCert,
-  send,
-}: Options) {
+// useChat manages the encrypted message history for a single open conversation.
+// Decryption and localStorage persistence of incoming messages happens
+// upstream in useIncomingMessages, which runs regardless of which
+// conversation (if any) is selected; this hook is only responsible for
+// sending, ack bookkeeping, and rendering the currently open conversation.
+export function useChat({ recipientId, recipientEncKeyJWK, ownCert, send }: Options) {
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     recipientId ? loadConversation(recipientId).messages.map(storedToChat) : [],
   )
@@ -124,62 +122,39 @@ export function useChat({
     [recipientId, recipientEncKeyJWK, ownCert, send],
   )
 
-  const receiveMessage = useCallback(
-    async (msg: WsMessage) => {
-      if (msg.type === 'message_ack') {
-        const clientMsgId = msg.clientMsgId as string
-        const serverMsgId = msg.serverMsgId as string
-        const status: ChatMessage['status'] =
-          (msg.status as string) === 'delivered' ? 'delivered' : 'queued'
-        const timestamp = msg.timestamp as number
+  // Handles message_ack frames from the server after a send.
+  const receiveAck = useCallback((msg: WsMessage) => {
+    if (msg.type !== 'message_ack') return
+    const clientMsgId = msg.clientMsgId as string
+    const serverMsgId = msg.serverMsgId as string
+    const status: ChatMessage['status'] = (msg.status as string) === 'delivered' ? 'delivered' : 'queued'
+    const timestamp = msg.timestamp as number
 
-        // Update state for the currently viewed conversation.
-        updateLocal(clientMsgId, { id: serverMsgId, status, timestamp })
+    // Update state for the currently viewed conversation (no-op if it's not this one).
+    updateLocal(clientMsgId, { id: serverMsgId, status, timestamp })
 
-        // Always update localStorage via the module-level map (works even if the
-        // user has switched to a different conversation).
-        const pending = pendingMap.get(clientMsgId)
-        if (pending) {
-          updateMessageById(pending.recipientId, clientMsgId, {
-            id: serverMsgId,
-            status,
-            timestamp,
-          })
-          pendingMap.delete(clientMsgId)
-        }
-        return
-      }
+    // Always update localStorage via the module-level map (works even if the
+    // user has switched to a different conversation since sending).
+    const pending = pendingMap.get(clientMsgId)
+    if (pending) {
+      updateMessageById(pending.recipientId, clientMsgId, {
+        id: serverMsgId,
+        status,
+        timestamp,
+      })
+      pendingMap.delete(clientMsgId)
+    }
+  }, [])
 
-      if (msg.type !== 'message') return
-      if (!recipientId || (msg.from as string) !== recipientId) return
-
-      const serverMsgId = msg.id as string
-      const timestamp = (msg.timestamp as number) || Date.now()
-      try {
-        const plaintext = await decryptMessage(msg.encryptedPayload as string, ownEncPrivKeyJWK)
-        const chatMsg: ChatMessage = {
-          id: serverMsgId,
-          direction: 'received',
-          text: plaintext,
-          timestamp,
-          status: 'delivered',
-        }
-        appendLocal(chatMsg)
-        appendMessage(recipientId, chatMsg as PersistedMsg)
-      } catch (err) {
-        const id = serverMsgId || `err-${++msgSeq}`
-        appendLocal({
-          id,
-          direction: 'received',
-          text: '',
-          timestamp,
-          status: 'failed',
-          error: `Decryption failed: ${err}`,
-        })
-      }
+  // Called by the parent when a message for this open conversation has
+  // already been decrypted and persisted (see useIncomingMessages).
+  const addIncomingMessage = useCallback(
+    (msg: ChatMessage) => {
+      appendLocal(msg)
+      if (recipientId) markRead(recipientId)
     },
-    [recipientId, ownEncPrivKeyJWK],
+    [recipientId],
   )
 
-  return { messages, sending, sendMessage, receiveMessage }
+  return { messages, sending, sendMessage, receiveAck, addIncomingMessage }
 }
