@@ -1,17 +1,61 @@
 import clsx from 'clsx'
-import type { OnlineUser } from '../../hooks/useRoster'
+import type { KnownUser } from '../../hooks/useUsers'
 
 interface Props {
-  users: OnlineUser[]
+  users: KnownUser[]
   selectedId: string | null
   unreadCounts: Map<string, number>
-  onSelect: (user: OnlineUser) => void
+  onSelect: (user: KnownUser) => void
   ownName: string
 }
 
-export default function UserList({ users, selectedId, unreadCounts, onSelect, ownName }: Props) {
+function UserRow({
+  user,
+  selected,
+  unread,
+  onSelect,
+}: {
+  user: KnownUser
+  selected: boolean
+  unread: number
+  onSelect: (user: KnownUser) => void
+}) {
   return (
-    <aside className="flex flex-col w-64 min-w-[14rem] border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 h-full">
+    <li>
+      <button
+        onClick={() => onSelect(user)}
+        className={clsx(
+          'flex items-center gap-2 w-full rounded-lg px-2 py-2 text-sm text-left transition-colors',
+          selected
+            ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
+            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800',
+        )}
+      >
+        <span
+          className={clsx(
+            'flex h-2 w-2 flex-shrink-0 rounded-full',
+            user.online ? 'bg-green-400' : 'bg-gray-300 dark:bg-gray-600',
+          )}
+        />
+        <span className={clsx('truncate flex-1', !user.online && 'text-gray-400 dark:text-gray-500')}>
+          {user.name}
+        </span>
+        {unread > 0 && (
+          <span className="flex-shrink-0 min-w-[1.25rem] h-5 px-1 rounded-full bg-indigo-500 text-white text-xs font-bold flex items-center justify-center leading-none">
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
+      </button>
+    </li>
+  )
+}
+
+export default function UserList({ users, selectedId, unreadCounts, onSelect, ownName }: Props) {
+  const onlineUsers = users.filter((u) => u.online)
+  const offlineUsers = users.filter((u) => !u.online)
+
+  return (
+    <aside className="flex flex-col w-64 min-w-[14rem] border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 h-full overflow-y-auto">
       <div className="px-4 py-4 border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <span className="flex h-2 w-2 rounded-full bg-green-500" />
@@ -22,37 +66,41 @@ export default function UserList({ users, selectedId, unreadCounts, onSelect, ow
 
       <div className="px-3 py-3">
         <p className="px-1 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-600 mb-2">
-          Online — {users.length}
+          Online — {onlineUsers.length}
         </p>
-        {users.length === 0 ? (
+        {onlineUsers.length === 0 ? (
           <p className="px-1 text-xs text-gray-400 dark:text-gray-600 italic">No other users online</p>
         ) : (
           <ul className="space-y-0.5">
-            {users.map((u) => {
-              const count = unreadCounts.get(u.id) ?? 0
-              return (
-                <li key={u.id}>
-                  <button
-                    onClick={() => onSelect(u)}
-                    className={clsx(
-                      'flex items-center gap-2 w-full rounded-lg px-2 py-2 text-sm text-left transition-colors',
-                      selectedId === u.id
-                        ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800',
-                    )}
-                  >
-                    <span className="flex h-2 w-2 flex-shrink-0 rounded-full bg-green-400" />
-                    <span className="truncate flex-1">{u.name}</span>
-                    {count > 0 && (
-                      <span className="flex-shrink-0 min-w-[1.25rem] h-5 px-1 rounded-full bg-indigo-500 text-white text-xs font-bold flex items-center justify-center leading-none">
-                        {count > 99 ? '99+' : count}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              )
-            })}
+            {onlineUsers.map((u) => (
+              <UserRow
+                key={u.id}
+                user={u}
+                selected={selectedId === u.id}
+                unread={unreadCounts.get(u.id) ?? 0}
+                onSelect={onSelect}
+              />
+            ))}
           </ul>
+        )}
+
+        {offlineUsers.length > 0 && (
+          <>
+            <p className="px-1 mt-4 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-600 mb-2">
+              Offline — {offlineUsers.length}
+            </p>
+            <ul className="space-y-0.5">
+              {offlineUsers.map((u) => (
+                <UserRow
+                  key={u.id}
+                  user={u}
+                  selected={selectedId === u.id}
+                  unread={unreadCounts.get(u.id) ?? 0}
+                  onSelect={onSelect}
+                />
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </aside>

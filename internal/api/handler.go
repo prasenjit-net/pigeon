@@ -111,6 +111,34 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, signed)
 }
 
+// --- users -------------------------------------------------------------
+
+// userSummary is the public-key material needed to encrypt messages to a
+// user, independent of whether they are currently online.
+type userSummary struct {
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	SigningKey    map[string]any `json:"signingKey"`
+	EncryptionKey map[string]any `json:"encryptionKey"`
+}
+
+// Users returns every registered user (online or not) so clients can start
+// a conversation with — and queue messages for — someone who isn't
+// currently connected.
+func (h *Handler) Users(w http.ResponseWriter, r *http.Request) {
+	certs := h.registry.All()
+	users := make([]userSummary, 0, len(certs))
+	for _, c := range certs {
+		users = append(users, userSummary{
+			ID:            c.Cert.Subject.ID,
+			Name:          c.Cert.Subject.Name,
+			SigningKey:    c.Cert.Subject.SigningKey,
+			EncryptionKey: c.Cert.Subject.EncryptionKey,
+		})
+	}
+	respondJSON(w, http.StatusOK, users)
+}
+
 // --- helpers ---------------------------------------------------------------
 
 func respondJSON(w http.ResponseWriter, status int, payload any) {

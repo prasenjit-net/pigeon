@@ -4,7 +4,7 @@ import type { StoredIdentity } from '../store/identity'
 import { clearIdentity } from '../store/identity'
 import { markRead, unreadCount } from '../store/messages'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
-import { useRoster, type OnlineUser } from '../hooks/useRoster'
+import { useUsers, type KnownUser } from '../hooks/useUsers'
 import { useChat, type ChatMessage } from '../hooks/useChat'
 import { useIncomingMessages } from '../hooks/useIncomingMessages'
 import UserList from '../components/chat/UserList'
@@ -16,14 +16,14 @@ interface Props {
 
 export default function ChatPage({ identity }: Props) {
   const navigate = useNavigate()
-  const [selected, setSelected] = useState<OnlineUser | null>(null)
+  const [selected, setSelected] = useState<KnownUser | null>(null)
   const [unreadCounts, setUnreadCounts] = useState<Map<string, number>>(new Map())
   const ownId = identity.certificate.cert.subject.id
 
   // sendRef lets useChat call send without creating a circular hook dependency.
   const sendRef = useRef<(payload: object) => void>(() => {})
 
-  const { roster, handleMessage: rosterHandler } = useRoster(ownId)
+  const { users, handleMessage: usersHandler } = useUsers(ownId)
 
   const chat = useChat(
     selected
@@ -71,17 +71,17 @@ export default function ChatPage({ identity }: Props) {
 
   const handleMessage = useCallback(
     (msg: WsMessage) => {
-      rosterHandler(msg)
+      usersHandler(msg)
       handleIncomingWs(msg)
       chat.receiveAck(msg)
     },
-    [rosterHandler, handleIncomingWs, chat.receiveAck],
+    [usersHandler, handleIncomingWs, chat.receiveAck],
   )
 
   const { send } = useWebSocket({ certificate: identity.certificate, onMessage: handleMessage })
   sendRef.current = send
 
-  function handleSelectUser(u: OnlineUser) {
+  function handleSelectUser(u: KnownUser) {
     setSelected(u)
     markRead(u.id)
     setUnreadCounts((prev) => {
@@ -110,7 +110,7 @@ export default function ChatPage({ identity }: Props) {
           </button>
         </div>
         <UserList
-          users={roster}
+          users={users}
           selectedId={selected?.id ?? null}
           unreadCounts={unreadCounts}
           onSelect={handleSelectUser}

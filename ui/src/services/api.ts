@@ -30,3 +30,14 @@ export const exampleApi = {
 export const metaApi = {
   get: async () => handleResponse<MetaResponse>(await fetch(`${API_BASE}/meta`)),
 }
+
+export interface UserSummary {
+  id: string
+  name: string
+  signingKey: JsonWebKey
+  encryptionKey: JsonWebKey
+}
+
+export const usersApi = {
+  list: async () => handleResponse<UserSummary[]>(await fetch(`${API_BASE}/users`)),
+}
