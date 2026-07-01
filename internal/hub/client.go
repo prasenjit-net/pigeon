@@ -122,6 +122,18 @@ func (c *Client) dispatch(raw []byte) {
 		c.handleHello(raw)
 	case TypeMessage:
 		c.handleSend(raw)
+	case TypeConnectRequest:
+		c.hub.handleConnectRequest(c, raw)
+	case TypeConnectRespond:
+		c.hub.handleConnectRespond(c, raw)
+	case TypeGroupCreate:
+		c.hub.handleGroupCreate(c, raw)
+	case TypeGroupInvite:
+		c.hub.handleGroupInvite(c, raw)
+	case TypeGroupRespond:
+		c.hub.handleGroupRespond(c, raw)
+	case TypeGroupMessage:
+		c.hub.handleGroupMessage(c, raw)
 	default:
 		c.sendError("unknown_type", "unknown message type: "+env.Type)
 	}
@@ -131,6 +143,13 @@ func (c *Client) handleHello(raw []byte) {
 	var msg HelloMsg
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		c.sendError("bad_hello", "invalid hello message")
+		return
+	}
+	// Certificates issued before the handle feature was added have an empty
+	// Handle field. Reject them so the client re-registers with a handle.
+	if msg.Certificate.Cert.Subject.Handle == "" {
+		c.logger.Warn("ws: rejected hello with outdated cert (no handle)")
+		c.sendError("cert_outdated", "certificate is outdated — please re-register")
 		return
 	}
 	if err := c.hub.CA().VerifyCertificate(msg.Certificate); err != nil {
@@ -208,19 +227,3 @@ func (c *Client) sendMsg(payload []byte) {
 	}
 }
 
-func (c *Client) onlineUser() OnlineUser {
-	return OnlineUser{
-		ID:            c.userID,
-		Name:          c.name,
-		SigningKey:     c.signingKey,
-		EncryptionKey: c.encryptionKey,
-	}
-}
-
-func mustMarshal(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic("hub: marshal failed: " + err.Error())
-	}
-	return b
-}

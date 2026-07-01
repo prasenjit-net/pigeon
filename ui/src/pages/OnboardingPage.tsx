@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import NameStep from '../components/onboarding/NameStep'
+import NameStep, { type NameStepPayload } from '../components/onboarding/NameStep'
 import KeygenStep, { type GeneratedKeys } from '../components/onboarding/KeygenStep'
 import RegisterStep from '../components/onboarding/RegisterStep'
 
-type Step = 'name' | 'keygen' | 'register'
-
 const REASON_MESSAGES: Record<string, string> = {
   invalid_cert: 'Your identity is no longer accepted by the server — the server may have been reset. Please register again.',
+  cert_outdated: 'Your identity certificate is outdated. Please re-register to get a new one.',
 }
+
+type Step = 'name' | 'keygen' | 'register'
 
 interface Props {
   onRegistered: () => void
@@ -16,7 +17,7 @@ interface Props {
 
 export default function OnboardingPage({ onRegistered, reason }: Props) {
   const [step, setStep] = useState<Step>('name')
-  const [name, setName] = useState('')
+  const [identity, setIdentity] = useState<NameStepPayload | null>(null)
   const [keys, setKeys] = useState<GeneratedKeys | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -62,11 +63,17 @@ export default function OnboardingPage({ onRegistered, reason }: Props) {
         )}
 
         {step === 'name' && (
-          <NameStep onNext={(n) => { setName(n); setStep('keygen') }} />
+          <NameStep
+            onNext={(payload) => {
+              setIdentity(payload)
+              setStep('keygen')
+            }}
+          />
         )}
-        {step === 'keygen' && (
+        {step === 'keygen' && identity && (
           <KeygenStep
-            name={name}
+            name={identity.name}
+            handle={identity.handle}
             onDone={(k) => { setKeys(k); setStep('register') }}
             onError={setError}
           />

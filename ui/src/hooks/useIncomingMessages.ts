@@ -8,6 +8,7 @@ interface ServerPersistedMsg {
   id: string
   from: string
   to: string
+  groupId?: string
   encryptedPayload: string
   timestamp: number
 }
@@ -50,6 +51,7 @@ export function useIncomingMessages({ ownEncPrivKeyJWK, onMessage }: Options) {
       if (msg.type === 'pending_messages') {
         const messages = (msg.messages as ServerPersistedMsg[]) ?? []
         for (const pm of messages) {
+          if (pm.groupId) continue // handled by useGroupIncomingMessages
           decryptAndStore(pm.from, pm.id, pm.encryptedPayload, pm.timestamp)
         }
       } else if (msg.type === 'message') {

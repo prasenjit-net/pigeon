@@ -77,8 +77,10 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 	}
 
 	reg = db.NewGORMRegistry(gdb)
+	connStore := db.NewGORMConnectionStore(gdb)
+	groupStore := db.NewGORMGroupStore(gdb)
 
-	h := hub.New(authority, logger)
+	h := hub.New(authority, reg, connStore, groupStore, logger)
 	go h.Run()
 
 	return &App{

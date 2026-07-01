@@ -9,6 +9,7 @@ import { fingerprintJWK } from '../../crypto/fingerprint'
 
 export interface GeneratedKeys {
   name: string
+  handle: string
   id: string
   signingPublicKey: JsonWebKey
   signingPrivateKey: JsonWebKey
@@ -18,13 +19,14 @@ export interface GeneratedKeys {
 
 interface Props {
   name: string
+  handle: string
   onDone: (keys: GeneratedKeys) => void
   onError: (msg: string) => void
 }
 
 type Step = 'signing' | 'encryption' | 'fingerprint' | 'done'
 
-export default function KeygenStep({ name, onDone, onError }: Props) {
+export default function KeygenStep({ name, handle, onDone, onError }: Props) {
   const [step, setStep] = useState<Step>('signing')
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export default function KeygenStep({ name, onDone, onError }: Props) {
 
         setStep('done')
         if (!cancelled) {
-          onDone({ name, id, signingPublicKey: sigPub, signingPrivateKey: sigPriv, encryptionPublicKey: encPub, encryptionPrivateKey: encPriv })
+          onDone({ name, handle, id, signingPublicKey: sigPub, signingPrivateKey: sigPriv, encryptionPublicKey: encPub, encryptionPrivateKey: encPriv })
         }
       } catch (err) {
         if (!cancelled) onError(String(err))

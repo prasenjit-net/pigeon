@@ -31,13 +31,15 @@ export const metaApi = {
   get: async () => handleResponse<MetaResponse>(await fetch(`${API_BASE}/meta`)),
 }
 
-export interface UserSummary {
+export interface UserSearchResult {
   id: string
+  handle: string
   name: string
-  signingKey: JsonWebKey
-  encryptionKey: JsonWebKey
 }
 
 export const usersApi = {
-  list: async () => handleResponse<UserSummary[]>(await fetch(`${API_BASE}/users`)),
+  search: async (handle: string) =>
+    handleResponse<UserSearchResult>(
+      await fetch(`${API_BASE}/users/search?handle=${encodeURIComponent(handle)}`),
+    ),
 }

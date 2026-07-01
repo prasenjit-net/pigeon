@@ -9,6 +9,7 @@ import (
 
 // CertSubject is the user identity included in a certificate.
 type CertSubject struct {
+	Handle        string         `json:"handle"` // unique @handle (stored without @)
 	Name          string         `json:"name"`
 	ID            string         `json:"id"` // hex SHA-256 of signing key JWK
 	SigningKey     map[string]any `json:"signingKey"`
@@ -36,11 +37,12 @@ const certValidityDays = 365
 const issuerName = "pigeon"
 
 // Issue builds and signs a certificate for a user.
-func (ca *CA) Issue(name, userID string, signingKey, encryptionKey map[string]any) (SignedCertificate, error) {
+func (ca *CA) Issue(handle, name, userID string, signingKey, encryptionKey map[string]any) (SignedCertificate, error) {
 	now := time.Now().UTC()
 	cert := Cert{
 		Version: certVersion,
 		Subject: CertSubject{
+			Handle:        handle,
 			Name:          name,
 			ID:            userID,
 			SigningKey:     signingKey,

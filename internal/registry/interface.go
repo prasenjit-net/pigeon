@@ -8,5 +8,6 @@ import "github.com/prasenjit-net/pigeon/internal/ca"
 type Registry interface {
 	Register(cert ca.SignedCertificate) error
 	Get(id string) (ca.SignedCertificate, error)
+	GetByHandle(handle string) (ca.SignedCertificate, error)
 	All() ([]ca.SignedCertificate, error)
 }

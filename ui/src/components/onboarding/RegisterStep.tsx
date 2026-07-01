@@ -27,6 +27,7 @@ export default function RegisterStep({ keys, onDone, onError }: Props) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            handle: keys.handle,
             name: keys.name,
             id: keys.id,
             signingKey: keys.signingPublicKey,
@@ -35,6 +36,7 @@ export default function RegisterStep({ keys, onDone, onError }: Props) {
         })
         if (!res.ok) {
           const body = await res.json().catch(() => ({}))
+          if (res.status === 409) throw new Error('Handle already taken — please go back and choose another.')
           throw new Error(body.error ?? `HTTP ${res.status}`)
         }
 
@@ -42,6 +44,7 @@ export default function RegisterStep({ keys, onDone, onError }: Props) {
 
         saveIdentity({
           name: keys.name,
+          handle: keys.handle,
           signingPublicKey: keys.signingPublicKey,
           signingPrivateKey: keys.signingPrivateKey,
           encryptionPublicKey: keys.encryptionPublicKey,

@@ -70,3 +70,54 @@ export function unreadCount(otherUserId: string): number {
 export function clearConversation(otherUserId: string): void {
   localStorage.removeItem(storageKey(otherUserId))
 }
+
+// ── Group conversation storage ────────────────────────────────────────────────
+// Same shape as 1:1 conversations but keyed under pigeon.group.${groupId}.
+
+function groupStorageKey(groupId: string): string {
+  return `pigeon.group.${groupId}`
+}
+
+function loadGroupConversationRaw(groupId: string): ConversationStore {
+  try {
+    const raw = localStorage.getItem(groupStorageKey(groupId))
+    if (!raw) return { messages: [], lastReadAt: 0 }
+    return JSON.parse(raw) as ConversationStore
+  } catch {
+    return { messages: [], lastReadAt: 0 }
+  }
+}
+
+function saveGroupConversation(groupId: string, store: ConversationStore): void {
+  const trimmed =
+    store.messages.length > MAX_MESSAGES
+      ? { ...store, messages: store.messages.slice(-MAX_MESSAGES) }
+      : store
+  localStorage.setItem(groupStorageKey(groupId), JSON.stringify(trimmed))
+}
+
+export function loadGroupConversation(groupId: string): ConversationStore {
+  return loadGroupConversationRaw(groupId)
+}
+
+export function appendGroupMessage(groupId: string, msg: PersistedMsg): void {
+  const store = loadGroupConversationRaw(groupId)
+  if (store.messages.some((m) => m.id === msg.id)) return
+  saveGroupConversation(groupId, { ...store, messages: [...store.messages, msg] })
+}
+
+export function updateGroupMessageById(groupId: string, id: string, patch: Partial<PersistedMsg>): void {
+  const store = loadGroupConversationRaw(groupId)
+  const messages = store.messages.map((m) => (m.id === id ? { ...m, ...patch } : m))
+  saveGroupConversation(groupId, { ...store, messages })
+}
+
+export function markGroupRead(groupId: string): void {
+  const store = loadGroupConversationRaw(groupId)
+  saveGroupConversation(groupId, { ...store, lastReadAt: Date.now() })
+}
+
+export function groupUnreadCount(groupId: string): number {
+  const { messages, lastReadAt } = loadGroupConversationRaw(groupId)
+  return messages.filter((m) => m.direction === 'received' && m.timestamp > lastReadAt).length
+}

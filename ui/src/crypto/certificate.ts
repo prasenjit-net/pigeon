@@ -3,6 +3,7 @@
 // localStorage — it is used to verify every SignedCertificate received.
 
 export interface CertSubject {
+  handle: string
   name: string
   id: string
   signingKey: JsonWebKey

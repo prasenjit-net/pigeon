@@ -27,10 +27,26 @@ func (r *gormRegistry) Register(cert ca.SignedCertificate) error {
 	}
 	row := User{
 		ID:          cert.Cert.Subject.ID,
+		Handle:      cert.Cert.Subject.Handle,
 		Certificate: string(data),
 	}
 	// Save upserts on primary key conflict.
 	return r.db.Save(&row).Error
+}
+
+func (r *gormRegistry) GetByHandle(handle string) (ca.SignedCertificate, error) {
+	var row User
+	if err := r.db.Where("handle = ?", handle).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ca.SignedCertificate{}, fmt.Errorf("registry: handle %q not found", handle)
+		}
+		return ca.SignedCertificate{}, err
+	}
+	var cert ca.SignedCertificate
+	if err := json.Unmarshal([]byte(row.Certificate), &cert); err != nil {
+		return ca.SignedCertificate{}, fmt.Errorf("registry: unmarshal cert: %w", err)
+	}
+	return cert, nil
 }
 
 func (r *gormRegistry) Get(id string) (ca.SignedCertificate, error) {

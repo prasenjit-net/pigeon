@@ -11,11 +11,13 @@ const KEY = {
   encPublic: 'pigeon.identity.encryptionPublicKey',
   certificate: 'pigeon.identity.certificate',
   name: 'pigeon.identity.name',
+  handle: 'pigeon.identity.handle',
   caPublicKey: 'pigeon.ca.publicKey',
 } as const
 
 export interface StoredIdentity {
   name: string
+  handle: string
   signingPrivateKey: JsonWebKey
   signingPublicKey: JsonWebKey
   encryptionPrivateKey: JsonWebKey
@@ -25,6 +27,7 @@ export interface StoredIdentity {
 
 export function saveIdentity(identity: StoredIdentity): void {
   localStorage.setItem(KEY.name, identity.name)
+  localStorage.setItem(KEY.handle, identity.handle)
   localStorage.setItem(KEY.signingPrivate, JSON.stringify(identity.signingPrivateKey))
   localStorage.setItem(KEY.signingPublic, JSON.stringify(identity.signingPublicKey))
   localStorage.setItem(KEY.encPrivate, JSON.stringify(identity.encryptionPrivateKey))
@@ -35,16 +38,18 @@ export function saveIdentity(identity: StoredIdentity): void {
 export function loadIdentity(): StoredIdentity | null {
   try {
     const name = localStorage.getItem(KEY.name)
+    const handle = localStorage.getItem(KEY.handle)
     const sigPub = localStorage.getItem(KEY.signingPublic)
     const sigPriv = localStorage.getItem(KEY.signingPrivate)
     const encPub = localStorage.getItem(KEY.encPublic)
     const encPriv = localStorage.getItem(KEY.encPrivate)
     const cert = localStorage.getItem(KEY.certificate)
 
-    if (!name || !sigPub || !sigPriv || !encPub || !encPriv || !cert) return null
+    if (!name || !handle || !sigPub || !sigPriv || !encPub || !encPriv || !cert) return null
 
     return {
       name,
+      handle,
       signingPublicKey: JSON.parse(sigPub),
       signingPrivateKey: JSON.parse(sigPriv),
       encryptionPublicKey: JSON.parse(encPub),

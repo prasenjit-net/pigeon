@@ -24,13 +24,13 @@ func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, autho
 	r.Get("/meta", h.Meta)
 	r.Get("/ca/public-key", h.CAPublicKey)
 	r.Post("/register", h.Register)
-	r.Get("/users", h.Users)
+	r.Get("/users/search", h.SearchUser)
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]any{
 			"service": cfg.App.Name,
 			"message": "API ready",
-			"routes":  []string{"/api/health", "/api/meta", "/api/ca/public-key", "/api/register", "/api/users"},
+			"routes":  []string{"/api/health", "/api/meta", "/api/ca/public-key", "/api/register", "/api/users/search"},
 		})
 	})
 

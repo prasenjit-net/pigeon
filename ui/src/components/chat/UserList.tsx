@@ -39,6 +39,7 @@ function UserRow({
         />
         <span className={clsx('truncate flex-1', !user.online && 'text-gray-400 dark:text-gray-500')}>
           {user.name}
+          <span className="ml-1 text-xs text-gray-400 dark:text-gray-500">@{user.handle}</span>
         </span>
         {unread > 0 && (
           <span className="flex-shrink-0 min-w-[1.25rem] h-5 px-1 rounded-full bg-indigo-500 text-white text-xs font-bold flex items-center justify-center leading-none">

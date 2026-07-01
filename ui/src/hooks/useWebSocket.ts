@@ -17,7 +17,7 @@ const MAX_DELAY = 30_000
 
 // Codes that should not trigger reconnection — the server has explicitly
 // rejected this identity and retrying will never succeed.
-const FATAL_CODES = new Set(['invalid_cert'])
+const FATAL_CODES = new Set(['invalid_cert', 'cert_outdated'])
 
 // useWebSocket opens a persistent WebSocket to /ws, sends hello on connect,
 // and handles reconnection with exponential backoff.

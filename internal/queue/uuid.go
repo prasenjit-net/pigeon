@@ -7,7 +7,9 @@ import (
 
 // newID returns a random 128-bit hex string used as a message ID.
 // Using crypto/rand avoids adding a UUID library dependency.
-func newID() string {
+// NewID returns a random UUID v4 string. Exported so other packages can
+// generate IDs without adding a dependency on an external UUID library.
+func NewID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		panic("queue: crypto/rand failed: " + err.Error())

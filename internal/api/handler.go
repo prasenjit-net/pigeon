@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/prasenjit-net/pigeon/internal/ca"
@@ -10,6 +12,8 @@ import (
 	"github.com/prasenjit-net/pigeon/internal/registry"
 	"github.com/prasenjit-net/pigeon/internal/version"
 )
+
+var handleRe = regexp.MustCompile(`^[a-z][a-z0-9_]{2,31}$`)
 
 // Handler holds dependencies for all API request handlers.
 type Handler struct {
@@ -75,6 +79,7 @@ func (h *Handler) CAPublicKey(w http.ResponseWriter, r *http.Request) {
 // --- registration ----------------------------------------------------------
 
 type registerRequest struct {
+	Handle        string         `json:"handle"`
 	Name          string         `json:"name"`
 	ID            string         `json:"id"` // hex SHA-256 of signing key JWK
 	SigningKey     map[string]any `json:"signingKey"`
@@ -88,6 +93,10 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !handleRe.MatchString(req.Handle) {
+		respondError(w, http.StatusBadRequest, "handle must be 3–32 characters: lowercase letters, digits, underscores; must start with a letter")
+		return
+	}
 	if req.Name == "" || len(req.Name) > 64 {
 		respondError(w, http.StatusBadRequest, "name must be 1–64 characters")
 		return
@@ -101,13 +110,23 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	signed, err := h.ca.Issue(req.Name, req.ID, req.SigningKey, req.EncryptionKey)
+	// Soft uniqueness check before issuing the cert (race-safe: DB unique index is the hard guard).
+	if _, err := h.registry.GetByHandle(req.Handle); err == nil {
+		respondError(w, http.StatusConflict, "handle already taken")
+		return
+	}
+
+	signed, err := h.ca.Issue(req.Handle, req.Name, req.ID, req.SigningKey, req.EncryptionKey)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "certificate issuance failed")
 		return
 	}
 
 	if err := h.registry.Register(signed); err != nil {
+		if isConflict(err) {
+			respondError(w, http.StatusConflict, "handle already taken")
+			return
+		}
 		respondError(w, http.StatusInternalServerError, "failed to store registration")
 		return
 	}
@@ -115,33 +134,42 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, signed)
 }
 
-// --- users -----------------------------------------------------------------
+// --- user search -----------------------------------------------------------
 
-// userSummary is the public-key material needed to encrypt messages to a user.
-type userSummary struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	SigningKey     map[string]any `json:"signingKey"`
-	EncryptionKey map[string]any `json:"encryptionKey"`
+type searchResult struct {
+	ID     string `json:"id"`
+	Handle string `json:"handle"`
+	Name   string `json:"name"`
 }
 
-// Users returns every registered user (online or not).
-func (h *Handler) Users(w http.ResponseWriter, r *http.Request) {
-	certs, err := h.registry.All()
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to load users")
+// SearchUser looks up a single user by handle.
+// Returns {id, handle, name} only — no keys. Keys are delivered via the WS
+// roster after a connection request is accepted.
+func (h *Handler) SearchUser(w http.ResponseWriter, r *http.Request) {
+	handle := r.URL.Query().Get("handle")
+	if handle == "" {
+		respondError(w, http.StatusBadRequest, "handle query parameter is required")
 		return
 	}
-	users := make([]userSummary, 0, len(certs))
-	for _, c := range certs {
-		users = append(users, userSummary{
-			ID:            c.Cert.Subject.ID,
-			Name:          c.Cert.Subject.Name,
-			SigningKey:    c.Cert.Subject.SigningKey,
-			EncryptionKey: c.Cert.Subject.EncryptionKey,
-		})
+	cert, err := h.registry.GetByHandle(handle)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "user not found")
+		return
 	}
-	respondJSON(w, http.StatusOK, users)
+	respondJSON(w, http.StatusOK, searchResult{
+		ID:     cert.Cert.Subject.ID,
+		Handle: cert.Cert.Subject.Handle,
+		Name:   cert.Cert.Subject.Name,
+	})
+}
+
+// isConflict returns true for duplicate-key DB errors.
+func isConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") || strings.Contains(msg, "duplicate key value")
 }
 
 // --- helpers ---------------------------------------------------------------

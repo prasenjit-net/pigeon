@@ -12,10 +12,12 @@ const defaultMaxPerUser = 200
 // PersistedMessage is a message held server-side for an offline recipient.
 // The EncryptedPayload is opaque to the server — it is stored and forwarded
 // as-is without decryption.
+// GroupID is set for group messages; empty for 1:1 messages.
 type PersistedMessage struct {
 	ID               string               `json:"id"`
 	From             string               `json:"from"`
 	To               string               `json:"to"`
+	GroupID          string               `json:"groupId,omitempty"`
 	EncryptedPayload string               `json:"encryptedPayload"`
 	SenderCert       ca.SignedCertificate `json:"senderCert"`
 	Timestamp        int64                `json:"timestamp"` // Unix milliseconds
@@ -25,7 +27,7 @@ type PersistedMessage struct {
 // current timestamp.
 func NewMessage(from, to, encryptedPayload string, senderCert ca.SignedCertificate) PersistedMessage {
 	return PersistedMessage{
-		ID:               newID(),
+		ID:               NewID(),
 		From:             from,
 		To:               to,
 		EncryptedPayload: encryptedPayload,
