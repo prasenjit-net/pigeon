@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -68,7 +69,9 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 		}
 	}
 
-	authority, err = ca.NewWithStore(db.NewGORMKeyStore(gdb), logger)
+	caKeyStore := db.NewGORMKeyStore(gdb)
+	migrateFileCAKey(cfg.DataDir, caKeyStore, logger)
+	authority, err = ca.NewWithStore(caKeyStore, logger)
 	if err != nil {
 		return nil, fmt.Errorf("server: init CA: %w", err)
 	}
@@ -190,6 +193,26 @@ func fileExists(fsys fs.FS, name string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+// migrateFileCAKey moves an existing data/ca.key.pem into the DB store the
+// first time the server starts after the GORM migration. It is a no-op when
+// the DB already has a key or the file does not exist.
+func migrateFileCAKey(dataDir string, store ca.KeyStore, logger *slog.Logger) {
+	if _, err := store.Load(); !errors.Is(err, ca.ErrKeyNotFound) {
+		return // DB already has a key (or unexpected error — let NewWithStore handle it)
+	}
+	oldPath := filepath.Join(dataDir, "ca.key.pem")
+	pem, err := os.ReadFile(oldPath)
+	if err != nil {
+		return // file doesn't exist — fresh install, nothing to migrate
+	}
+	if err := store.Save(pem); err != nil {
+		logger.Warn("ca: failed to migrate key file to DB", "error", err)
+		return
+	}
+	_ = os.Remove(oldPath)
+	logger.Info("ca: migrated ca.key.pem to database")
 }
 
 func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
