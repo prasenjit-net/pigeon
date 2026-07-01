@@ -9,22 +9,30 @@ export interface WsMessage {
 interface Options {
   certificate: SignedCertificate
   onMessage: (msg: WsMessage) => void
+  onFatalError?: (code: string) => void
 }
 
 const BASE_DELAY = 1000
 const MAX_DELAY = 30_000
 
+// Codes that should not trigger reconnection — the server has explicitly
+// rejected this identity and retrying will never succeed.
+const FATAL_CODES = new Set(['invalid_cert'])
+
 // useWebSocket opens a persistent WebSocket to /ws, sends hello on connect,
 // and handles reconnection with exponential backoff.
 export function useWebSocket(options: Options) {
-  const { certificate, onMessage } = options
+  const { certificate, onMessage, onFatalError } = options
   const wsRef = useRef<WebSocket | null>(null)
   const sendQueueRef = useRef<string[]>([])
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const delay = useRef(BASE_DELAY)
   const unmounted = useRef(false)
+  const fatalRef = useRef(false)
   const onMessageRef = useRef(onMessage)
+  const onFatalErrorRef = useRef(onFatalError)
   onMessageRef.current = onMessage
+  onFatalErrorRef.current = onFatalError
 
   const send = useCallback((payload: object) => {
     const str = JSON.stringify(payload)
@@ -37,9 +45,10 @@ export function useWebSocket(options: Options) {
 
   useEffect(() => {
     unmounted.current = false
+    fatalRef.current = false
 
     function connect() {
-      if (unmounted.current) return
+      if (unmounted.current || fatalRef.current) return
 
       const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
       const ws = new WebSocket(`${protocol}://${window.location.host}/ws`)
@@ -56,6 +65,12 @@ export function useWebSocket(options: Options) {
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data as string) as WsMessage
+          if (msg.type === 'error' && FATAL_CODES.has(msg.code as string)) {
+            fatalRef.current = true
+            ws.close()
+            onFatalErrorRef.current?.(msg.code as string)
+            return
+          }
           onMessageRef.current(msg)
         } catch {
           // ignore malformed frames
@@ -63,7 +78,7 @@ export function useWebSocket(options: Options) {
       }
 
       ws.onclose = () => {
-        if (unmounted.current) return
+        if (unmounted.current || fatalRef.current) return
         reconnectTimer.current = setTimeout(() => {
           delay.current = Math.min(delay.current * 2, MAX_DELAY)
           connect()

@@ -5,11 +5,16 @@ import RegisterStep from '../components/onboarding/RegisterStep'
 
 type Step = 'name' | 'keygen' | 'register'
 
-interface Props {
-  onRegistered: () => void
+const REASON_MESSAGES: Record<string, string> = {
+  invalid_cert: 'Your identity is no longer accepted by the server — the server may have been reset. Please register again.',
 }
 
-export default function OnboardingPage({ onRegistered }: Props) {
+interface Props {
+  onRegistered: () => void
+  reason?: string | null
+}
+
+export default function OnboardingPage({ onRegistered, reason }: Props) {
   const [step, setStep] = useState<Step>('name')
   const [name, setName] = useState('')
   const [keys, setKeys] = useState<GeneratedKeys | null>(null)
@@ -20,6 +25,12 @@ export default function OnboardingPage({ onRegistered }: Props) {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-lg p-8">
+        {reason && REASON_MESSAGES[reason] && (
+          <div className="mb-6 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+            {REASON_MESSAGES[reason]}
+          </div>
+        )}
+
         {/* Step indicator */}
         <div className="flex items-center gap-2 mb-8">
           {steps.map((s, i) => (

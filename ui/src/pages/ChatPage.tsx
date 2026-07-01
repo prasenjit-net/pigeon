@@ -1,7 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import type { StoredIdentity } from '../store/identity'
-import { clearIdentity } from '../store/identity'
 import { markRead, unreadCount } from '../store/messages'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import { useUsers, type KnownUser } from '../hooks/useUsers'
@@ -12,10 +10,10 @@ import ConversationPane from '../components/chat/ConversationPane'
 
 interface Props {
   identity: StoredIdentity
+  onLogout: (reason?: string) => void
 }
 
-export default function ChatPage({ identity }: Props) {
-  const navigate = useNavigate()
+export default function ChatPage({ identity, onLogout }: Props) {
   const [selected, setSelected] = useState<KnownUser | null>(null)
   const [unreadCounts, setUnreadCounts] = useState<Map<string, number>>(new Map())
   const ownId = identity.certificate.cert.subject.id
@@ -78,7 +76,11 @@ export default function ChatPage({ identity }: Props) {
     [usersHandler, handleIncomingWs, chat.receiveAck],
   )
 
-  const { send } = useWebSocket({ certificate: identity.certificate, onMessage: handleMessage })
+  const { send } = useWebSocket({
+    certificate: identity.certificate,
+    onMessage: handleMessage,
+    onFatalError: () => onLogout('invalid_cert'),
+  })
   sendRef.current = send
 
   function handleSelectUser(u: KnownUser) {
@@ -92,8 +94,7 @@ export default function ChatPage({ identity }: Props) {
   }
 
   function handleLogout() {
-    clearIdentity()
-    navigate('/', { replace: true })
+    onLogout()
   }
 
   return (
