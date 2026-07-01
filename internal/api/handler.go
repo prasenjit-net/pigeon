@@ -16,10 +16,10 @@ type Handler struct {
 	config   config.Config
 	version  version.Info
 	ca       *ca.CA
-	registry *registry.Registry
+	registry registry.Registry
 }
 
-func NewHandler(cfg config.Config, build version.Info, authority *ca.CA, reg *registry.Registry) *Handler {
+func NewHandler(cfg config.Config, build version.Info, authority *ca.CA, reg registry.Registry) *Handler {
 	return &Handler{config: cfg, version: build, ca: authority, registry: reg}
 }
 
@@ -107,26 +107,31 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.registry.Register(signed)
+	if err := h.registry.Register(signed); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to store registration")
+		return
+	}
+
 	respondJSON(w, http.StatusCreated, signed)
 }
 
-// --- users -------------------------------------------------------------
+// --- users -----------------------------------------------------------------
 
-// userSummary is the public-key material needed to encrypt messages to a
-// user, independent of whether they are currently online.
+// userSummary is the public-key material needed to encrypt messages to a user.
 type userSummary struct {
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
-	SigningKey    map[string]any `json:"signingKey"`
+	SigningKey     map[string]any `json:"signingKey"`
 	EncryptionKey map[string]any `json:"encryptionKey"`
 }
 
-// Users returns every registered user (online or not) so clients can start
-// a conversation with — and queue messages for — someone who isn't
-// currently connected.
+// Users returns every registered user (online or not).
 func (h *Handler) Users(w http.ResponseWriter, r *http.Request) {
-	certs := h.registry.All()
+	certs, err := h.registry.All()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load users")
+		return
+	}
 	users := make([]userSummary, 0, len(certs))
 	for _, c := range certs {
 		users = append(users, userSummary{

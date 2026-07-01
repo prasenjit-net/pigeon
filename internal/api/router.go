@@ -14,7 +14,7 @@ import (
 	"github.com/prasenjit-net/pigeon/internal/version"
 )
 
-func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, authority *ca.CA, reg *registry.Registry) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger, build version.Info, authority *ca.CA, reg registry.Registry) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Timeout(30 * time.Second))
 

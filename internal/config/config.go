@@ -11,11 +11,19 @@ import (
 )
 
 type Config struct {
-	App     AppConfig     `mapstructure:"app" yaml:"app"`
-	Server  ServerConfig  `mapstructure:"server" yaml:"server"`
-	Logging LoggingConfig `mapstructure:"logging" yaml:"logging"`
-	UI      UIConfig      `mapstructure:"ui" yaml:"ui"`
-	DataDir string        `mapstructure:"dataDir" yaml:"dataDir"`
+	App      AppConfig      `mapstructure:"app"      yaml:"app"`
+	Server   ServerConfig   `mapstructure:"server"   yaml:"server"`
+	Logging  LoggingConfig  `mapstructure:"logging"  yaml:"logging"`
+	UI       UIConfig       `mapstructure:"ui"       yaml:"ui"`
+	Database DatabaseConfig `mapstructure:"database" yaml:"database"`
+	DataDir  string         `mapstructure:"dataDir"  yaml:"dataDir"`
+}
+
+type DatabaseConfig struct {
+	// DSN is a database connection string. When set, PostgreSQL is used;
+	// when empty, SQLite is used at {DataDir}/pigeon.db.
+	// Example: postgres://pigeon:pigeon@localhost:5432/pigeon?sslmode=disable
+	DSN string `mapstructure:"dsn" yaml:"dsn"`
 }
 
 type AppConfig struct {
@@ -95,6 +103,7 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("logging.format", defaults.Logging.Format)
 	v.SetDefault("ui.devProxyURL", defaults.UI.DevProxyURL)
 	v.SetDefault("dataDir", defaults.DataDir)
+	v.SetDefault("database.dsn", "")
 }
 
 func Load(v *viper.Viper) (Config, error) {

@@ -7,16 +7,20 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"gorm.io/gorm"
 
 	"github.com/prasenjit-net/pigeon/internal/api"
 	"github.com/prasenjit-net/pigeon/internal/ca"
 	"github.com/prasenjit-net/pigeon/internal/config"
+	"github.com/prasenjit-net/pigeon/internal/db"
 	"github.com/prasenjit-net/pigeon/internal/hub"
 	"github.com/prasenjit-net/pigeon/internal/registry"
 	"github.com/prasenjit-net/pigeon/internal/version"
@@ -34,16 +38,42 @@ type App struct {
 	options Options
 	hub     *hub.Hub
 	ca      *ca.CA
-	reg     *registry.Registry
+	reg     registry.Registry
+	gdb     *gorm.DB
 }
 
 func New(cfg config.Config, logger *slog.Logger, build version.Info, options Options) (*App, error) {
-	authority, err := ca.New(cfg.DataDir, logger)
+	var (
+		authority *ca.CA
+		reg       registry.Registry
+		gdb       *gorm.DB
+		err       error
+	)
+
+	if cfg.Database.DSN != "" {
+		logger.Info("db: connecting to PostgreSQL")
+		gdb, err = db.Open(cfg.Database.DSN)
+		if err != nil {
+			return nil, fmt.Errorf("server: open db: %w", err)
+		}
+	} else {
+		if err = os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+			return nil, fmt.Errorf("server: create data dir: %w", err)
+		}
+		sqlitePath := filepath.Join(cfg.DataDir, "pigeon.db")
+		logger.Info("db: using SQLite", "path", sqlitePath)
+		gdb, err = db.OpenSQLite(sqlitePath)
+		if err != nil {
+			return nil, fmt.Errorf("server: open sqlite: %w", err)
+		}
+	}
+
+	authority, err = ca.NewWithStore(db.NewGORMKeyStore(gdb), logger)
 	if err != nil {
 		return nil, fmt.Errorf("server: init CA: %w", err)
 	}
 
-	reg := registry.New()
+	reg = db.NewGORMRegistry(gdb)
 
 	h := hub.New(authority, logger)
 	go h.Run()
@@ -56,7 +86,17 @@ func New(cfg config.Config, logger *slog.Logger, build version.Info, options Opt
 		hub:     h,
 		ca:      authority,
 		reg:     reg,
+		gdb:     gdb,
 	}, nil
+}
+
+// Close releases the database connection pool. Call this during graceful shutdown.
+func (a *App) Close() {
+	if a.gdb != nil {
+		if err := db.Close(a.gdb); err != nil {
+			a.logger.Warn("db: close error", "error", err)
+		}
+	}
 }
 
 func (a *App) Handler() http.Handler {

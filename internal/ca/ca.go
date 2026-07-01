@@ -7,50 +7,56 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"sync"
 )
 
 // CA is the server Certificate Authority. It holds an RSA-PSS key pair used
-// to sign user certificates. The key pair is generated once and persisted to
-// disk so it survives restarts.
+// to sign user certificates.
 type CA struct {
 	mu         sync.RWMutex
 	privateKey *rsa.PrivateKey
-	dataDir    string
 	logger     *slog.Logger
 }
 
-const keyFile = "ca.key.pem"
+// NewWithStore initialises the CA using the provided KeyStore. If the store
+// returns ErrKeyNotFound a new RSA-2048 key pair is generated and saved;
+// otherwise the existing PEM is parsed and loaded.
+func NewWithStore(store KeyStore, logger *slog.Logger) (*CA, error) {
+	ca := &CA{logger: logger}
 
-// New loads the CA key pair from dataDir/ca.key.pem, or generates and saves a
-// new one if the file does not exist.
-func New(dataDir string, logger *slog.Logger) (*CA, error) {
-	ca := &CA{dataDir: dataDir, logger: logger}
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		return nil, fmt.Errorf("ca: create data dir: %w", err)
-	}
-
-	path := filepath.Join(dataDir, keyFile)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	pemBytes, err := store.Load()
+	switch {
+	case errors.Is(err, ErrKeyNotFound):
 		logger.Info("ca: generating new CA key pair")
-		if err := ca.generate(path); err != nil {
+		if err := ca.generateAndSave(store); err != nil {
 			return nil, err
 		}
-	} else {
-		if err := ca.load(path); err != nil {
+	case err != nil:
+		return nil, fmt.Errorf("ca: load key: %w", err)
+	default:
+		if err := ca.parsePEM(pemBytes); err != nil {
 			return nil, err
 		}
+		logger.Info("ca: loaded existing key pair")
 	}
 
-	logger.Info("ca: ready", "key_file", path)
 	return ca, nil
 }
 
-func (ca *CA) generate(path string) error {
+// New is a backward-compatible constructor for tests and the old file-based
+// startup path. Production code in server.go uses NewWithStore directly.
+func New(dataDir string, logger *slog.Logger) (*CA, error) {
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return nil, fmt.Errorf("ca: create data dir: %w", err)
+	}
+	return NewWithStore(fileKeyStore{rootDir: dataDir}, logger)
+}
+
+func (ca *CA) generateAndSave(store KeyStore) error {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return fmt.Errorf("ca: generate key: %w", err)
@@ -60,37 +66,25 @@ func (ca *CA) generate(path string) error {
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(priv),
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return fmt.Errorf("ca: open key file: %w", err)
-	}
-	defer f.Close()
-	if err := pem.Encode(f, block); err != nil {
-		return fmt.Errorf("ca: write key file: %w", err)
+	pemBytes := pem.EncodeToMemory(block)
+	if err := store.Save(pemBytes); err != nil {
+		return err
 	}
 
 	ca.privateKey = priv
 	return nil
 }
 
-func (ca *CA) load(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("ca: read key file: %w", err)
-	}
-
+func (ca *CA) parsePEM(data []byte) error {
 	block, _ := pem.Decode(data)
 	if block == nil || block.Type != "RSA PRIVATE KEY" {
-		return fmt.Errorf("ca: invalid PEM block in %s", path)
+		return fmt.Errorf("ca: invalid PEM block")
 	}
-
 	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
 		return fmt.Errorf("ca: parse key: %w", err)
 	}
-
 	ca.privateKey = priv
-	ca.logger.Info("ca: loaded existing key pair")
 	return nil
 }
 
@@ -106,7 +100,6 @@ func (ca *CA) PublicKeyJWK() (map[string]any, error) {
 		return nil, fmt.Errorf("ca: marshal public key: %w", err)
 	}
 
-	// Build a minimal RSA JWK for the browser.
 	jwk := rsaPublicKeyToJWK(pub, pubDER)
 	return jwk, nil
 }
