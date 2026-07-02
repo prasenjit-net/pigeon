@@ -10,9 +10,10 @@ interface Props {
   messages: ChatMessage[]
   sending: boolean
   onSend: (text: string) => void
+  onDisconnect: () => void
 }
 
-export default function ConversationPane({ recipient, messages, sending, onSend }: Props) {
+export default function ConversationPane({ recipient, messages, sending, onSend, onDisconnect }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -43,6 +44,13 @@ export default function ConversationPane({ recipient, messages, sending, onSend 
         <span className="ml-1 rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs text-gray-500 dark:text-gray-400 font-mono">
           {recipient.id.slice(0, 8)}…
         </span>
+        <button
+          onClick={onDisconnect}
+          title="Disconnect"
+          className="ml-auto text-xs text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
+        >
+          Disconnect
+        </button>
       </div>
 
       {/* Messages */}

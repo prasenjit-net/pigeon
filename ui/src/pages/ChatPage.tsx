@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { StoredIdentity } from '../store/identity'
 import { markRead, unreadCount, groupUnreadCount, markGroupRead } from '../store/messages'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
@@ -164,6 +164,20 @@ export default function ChatPage({ identity, onLogout }: Props) {
     })
   }
 
+  // Auto-deselect when the selected DM contact is removed from roster.
+  useEffect(() => {
+    if (selected?.kind === 'dm' && !users.some((u) => u.id === selected.user.id)) {
+      setSelected(null)
+    }
+  }, [users])
+
+  // Auto-deselect when we leave a group or get removed.
+  useEffect(() => {
+    if (selected?.kind === 'group' && !groups.groups.some((g) => g.id === selected.group.id)) {
+      setSelected(null)
+    }
+  }, [groups.groups])
+
   function handleInvite(groupId: string, targetId: string) {
     groups.inviteToGroup(groupId, targetId)
     setInvitedMap((prev) => {
@@ -233,6 +247,7 @@ export default function ChatPage({ identity, onLogout }: Props) {
             messages={chat.messages}
             sending={chat.sending}
             onSend={chat.sendMessage}
+            onDisconnect={() => connections.disconnect(selected.user.id)}
           />
         )}
         {selected?.kind === 'group' && (
@@ -243,6 +258,7 @@ export default function ChatPage({ identity, onLogout }: Props) {
             sending={groupChat.sending}
             onSend={groupChat.sendMessage}
             onInvite={handleInvite}
+            onLeave={groups.leaveGroup}
             invitedIds={invitedMap.get(selected.group.id) ?? new Set()}
           />
         )}

@@ -71,6 +71,10 @@ type Store interface {
 	// ListUndeliveredResponses returns memberships where the inviter has not
 	// yet been notified of the response (InviterNotified=false, Status!=invited).
 	ListUndeliveredResponses(inviterID string) ([]Member, error)
+
+	// RemoveMember permanently deletes the membership for userID in groupID.
+	// Returns ErrNotFound if no accepted membership exists.
+	RemoveMember(groupID, userID string) error
 }
 
 var ErrHandleExists = errors.New("groups: handle already exists")

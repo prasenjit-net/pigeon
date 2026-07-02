@@ -126,6 +126,10 @@ func (c *Client) dispatch(raw []byte) {
 		c.hub.handleConnectRequest(c, raw)
 	case TypeConnectRespond:
 		c.hub.handleConnectRespond(c, raw)
+	case TypeConnectionRemove:
+		c.hub.handleConnectionRemove(c, raw)
+	case TypeGroupLeave:
+		c.hub.handleGroupLeave(c, raw)
 	case TypeGroupCreate:
 		c.hub.handleGroupCreate(c, raw)
 	case TypeGroupInvite:

@@ -1,0 +1,9 @@
+{
+  "name": "pigeon-scripts",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "sharp": "^0.34.0",
+    "twemoji": "^14.0.2"
+  }
+}

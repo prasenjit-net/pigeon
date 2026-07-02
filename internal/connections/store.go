@@ -45,6 +45,9 @@ type Store interface {
 	// ListUndeliveredResponses returns accepted/rejected connections initiated by
 	// userID where the response has not yet been delivered (RequesterNotified=false).
 	ListUndeliveredResponses(userID string) ([]Request, error)
+
+	// Delete permanently removes a connection record by ID.
+	Delete(id string) error
 }
 
 var ErrAlreadyExists = errors.New("connections: already exists")

@@ -7,22 +7,27 @@ import (
 
 // Inbound message types (client → server).
 const (
-	TypeHello          = "hello"
-	TypeMessage        = "message"
-	TypeConnectRequest = "connect_request"
-	TypeConnectRespond = "connect_respond"
+	TypeHello             = "hello"
+	TypeMessage           = "message"
+	TypeConnectRequest    = "connect_request"
+	TypeConnectRespond    = "connect_respond"
+	TypeConnectionRemove  = "connection_remove"
+	TypeGroupLeave        = "group_leave"
 )
 
 // Outbound message types (server → client).
 const (
-	TypeRoster             = "roster"
-	TypeUserJoined         = "user_joined"
-	TypeUserLeft           = "user_left"
-	TypeError              = "error"
-	TypeMessageAck         = "message_ack"
-	TypePendingMessages    = "pending_messages"
-	TypeConnectRequestAck  = "connect_request_ack"
-	TypePendingConnects    = "pending_connects"
+	TypeRoster              = "roster"
+	TypeUserJoined          = "user_joined"
+	TypeUserLeft            = "user_left"
+	TypeError               = "error"
+	TypeMessageAck          = "message_ack"
+	TypePendingMessages     = "pending_messages"
+	TypeConnectRequestAck   = "connect_request_ack"
+	TypePendingConnects     = "pending_connects"
+	TypeConnectionRemoveAck = "connection_remove_ack"
+	TypeGroupLeaveAck       = "group_leave_ack"
+	TypeGroupMemberLeft     = "group_member_left"
 )
 
 // InboundEnvelope is the top-level wrapper for all client→server messages.
@@ -311,4 +316,35 @@ type PendingGroupConnectsMsg struct {
 	Type      string                   `json:"type"` // "pending_group_connects"
 	Invites   []OutboundGroupInviteMsg `json:"invites"`
 	Responses []GroupRespondNotifyMsg  `json:"responses"`
+}
+
+// ConnectionRemoveMsg is sent by a client to remove an accepted connection.
+type ConnectionRemoveMsg struct {
+	Type     string `json:"type"`
+	TargetID string `json:"targetId"`
+}
+
+// ConnectionRemoveAckMsg is sent back after a successful connection removal.
+type ConnectionRemoveAckMsg struct {
+	Type     string `json:"type"` // "connection_remove_ack"
+	TargetID string `json:"targetId"`
+}
+
+// GroupLeaveMsg is sent by a member to leave a group.
+type GroupLeaveMsg struct {
+	Type    string `json:"type"`
+	GroupID string `json:"groupId"`
+}
+
+// GroupLeaveAckMsg confirms that the user has left the group.
+type GroupLeaveAckMsg struct {
+	Type    string `json:"type"` // "group_leave_ack"
+	GroupID string `json:"groupId"`
+}
+
+// GroupMemberLeftMsg notifies remaining members that a member permanently left.
+type GroupMemberLeftMsg struct {
+	Type    string `json:"type"` // "group_member_left"
+	GroupID string `json:"groupId"`
+	UserID  string `json:"userId"`
 }

@@ -12,6 +12,7 @@ interface Props {
   sending: boolean
   onSend: (text: string) => void
   onInvite: (groupId: string, targetId: string) => void
+  onLeave: (groupId: string) => void
   invitedIds: Set<string>
 }
 
@@ -22,6 +23,7 @@ export default function GroupConversationPane({
   sending,
   onSend,
   onInvite,
+  onLeave,
   invitedIds,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -56,15 +58,24 @@ export default function GroupConversationPane({
             {group.members.length} member{group.members.length !== 1 ? 's' : ''} · {onlineCount} online
           </p>
         </div>
-        {isOwner && (
-          <div className="flex-shrink-0 max-w-xs">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isOwner && (
             <GroupInvitePanel
               groupId={group.id}
               onInvite={onInvite}
               sentTo={invitedIds}
             />
-          </div>
-        )}
+          )}
+          {!isOwner && (
+            <button
+              onClick={() => onLeave(group.id)}
+              title="Leave group"
+              className="text-xs text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
+            >
+              Leave
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}

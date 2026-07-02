@@ -102,6 +102,17 @@ func (s *gormConnectionStore) ListUndeliveredResponses(userID string) ([]connect
 	return toRequests(rows), nil
 }
 
+func (s *gormConnectionStore) Delete(id string) error {
+	res := s.db.Delete(&Connection{}, "id = ?", id)
+	if res.Error != nil {
+		return fmt.Errorf("connections: delete: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return connections.ErrNotFound
+	}
+	return nil
+}
+
 // Compile-time assertion.
 var _ connections.Store = (*gormConnectionStore)(nil)
 

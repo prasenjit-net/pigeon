@@ -22,6 +22,10 @@ export function useConnections(send: (payload: object) => void) {
     setPendingInbound((prev) => prev.filter((r) => r.connectionId !== connectionId))
   }
 
+  function disconnect(targetId: string) {
+    send({ type: 'connection_remove', targetId })
+  }
+
   const handleMessage = useCallback(
     (msg: WsMessage) => {
       if (msg.type === 'pending_connects') {
@@ -56,5 +60,5 @@ export function useConnections(send: (payload: object) => void) {
     [],
   )
 
-  return { pendingInbound, sentTo, sendRequest, respond, handleMessage }
+  return { pendingInbound, sentTo, sendRequest, respond, disconnect, handleMessage }
 }

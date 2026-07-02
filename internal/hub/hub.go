@@ -464,6 +464,108 @@ func mustMarshal(v any) []byte {
 	return b
 }
 
+// handleConnectionRemove removes an accepted connection between from and targetId.
+func (h *Hub) handleConnectionRemove(from *Client, raw []byte) {
+	var msg ConnectionRemoveMsg
+	if err := json.Unmarshal(raw, &msg); err != nil || msg.TargetID == "" {
+		from.sendError("bad_request", "invalid connection_remove payload")
+		return
+	}
+
+	accepted, err := h.connStore.ListAccepted(from.userID)
+	if err != nil {
+		h.logger.Error("hub: list accepted connections for removal", "error", err)
+		from.sendError("server_error", "failed to disconnect")
+		return
+	}
+
+	var connID string
+	for _, c := range accepted {
+		if c.RequesterID == msg.TargetID || c.RecipientID == msg.TargetID {
+			connID = c.ID
+			break
+		}
+	}
+	if connID == "" {
+		from.sendError("not_found", "no accepted connection with that user")
+		return
+	}
+
+	if err := h.connStore.Delete(connID); err != nil {
+		h.logger.Error("hub: delete connection", "error", err)
+		from.sendError("server_error", "failed to disconnect")
+		return
+	}
+
+	// Ack the initiator and refresh both rosters.
+	from.sendMsg(mustMarshal(ConnectionRemoveAckMsg{Type: TypeConnectionRemoveAck, TargetID: msg.TargetID}))
+	h.sendRoster(from)
+	h.mu.RLock()
+	targetClient, online := h.clients[msg.TargetID]
+	h.mu.RUnlock()
+	if online {
+		h.sendRoster(targetClient)
+	}
+}
+
+// handleGroupLeave removes the requesting user from a group.
+func (h *Hub) handleGroupLeave(from *Client, raw []byte) {
+	var msg GroupLeaveMsg
+	if err := json.Unmarshal(raw, &msg); err != nil || msg.GroupID == "" {
+		from.sendError("bad_request", "invalid group_leave payload")
+		return
+	}
+
+	g, err := h.groupStore.GetByID(msg.GroupID)
+	if err != nil {
+		from.sendError("not_found", "group not found")
+		return
+	}
+	if g.OwnerID == from.userID {
+		from.sendError("forbidden", "the group owner cannot leave")
+		return
+	}
+
+	// Collect current members before removal so we can notify them.
+	remaining, listErr := h.groupStore.ListAcceptedMembers(msg.GroupID)
+	if listErr != nil {
+		h.logger.Error("hub: list members before group leave", "error", listErr)
+	}
+
+	if err := h.groupStore.RemoveMember(msg.GroupID, from.userID); err != nil {
+		if err == groups.ErrNotFound {
+			from.sendError("not_found", "not a member of this group")
+			return
+		}
+		h.logger.Error("hub: remove group member", "error", err)
+		from.sendError("server_error", "failed to leave group")
+		return
+	}
+
+	// Ack the leaving user and give them a fresh group roster (group is now gone).
+	from.sendMsg(mustMarshal(GroupLeaveAckMsg{Type: TypeGroupLeaveAck, GroupID: msg.GroupID}))
+	h.sendGroupRoster(from)
+
+	// Notify remaining online members that this user permanently left.
+	if listErr == nil {
+		memberLeft := mustMarshal(GroupMemberLeftMsg{Type: TypeGroupMemberLeft, GroupID: msg.GroupID, UserID: from.userID})
+		h.mu.RLock()
+		onlineClients := h.clients
+		h.mu.RUnlock()
+		for _, m := range remaining {
+			if m.UserID == from.userID {
+				continue
+			}
+			if cl, ok := onlineClients[m.UserID]; ok {
+				select {
+				case cl.send <- memberLeft:
+				default:
+				}
+			}
+		}
+	}
+}
+
 // ── Group handlers ────────────────────────────────────────────────────────────
 
 // sendGroupRoster sends all accepted groups (with members + encryption keys) to c.

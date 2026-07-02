@@ -45,6 +45,10 @@ export function useGroups(ownId: string, send: (payload: object) => void) {
     setPendingInvites((prev) => prev.filter((i) => i.memberId !== memberId))
   }
 
+  function leaveGroup(groupId: string) {
+    send({ type: 'group_leave', groupId })
+  }
+
   const handleMessage = useCallback(
     (msg: WsMessage) => {
       if (msg.type === 'group_roster') {
@@ -98,6 +102,23 @@ export function useGroups(ownId: string, send: (payload: object) => void) {
           const members = g.members.map((m) => (m.id === userId ? { ...m, online: false } : m))
           return new Map(prev).set(groupId, { ...g, members })
         })
+      } else if (msg.type === 'group_member_left') {
+        // A member permanently left — remove them from the group's member list.
+        const groupId = msg.groupId as string
+        const userId = msg.userId as string
+        setGroupsMap((prev) => {
+          const g = prev.get(groupId)
+          if (!g) return prev
+          return new Map(prev).set(groupId, { ...g, members: g.members.filter((m) => m.id !== userId) })
+        })
+      } else if (msg.type === 'group_leave_ack') {
+        // We successfully left — remove the group from our map.
+        const groupId = msg.groupId as string
+        setGroupsMap((prev) => {
+          const next = new Map(prev)
+          next.delete(groupId)
+          return next
+        })
       }
       // group_respond: roster is refreshed server-side via group_roster, no extra state needed.
     },
@@ -113,6 +134,7 @@ export function useGroups(ownId: string, send: (payload: object) => void) {
     createGroup,
     inviteToGroup,
     respondToInvite,
+    leaveGroup,
     handleMessage,
   }
 }

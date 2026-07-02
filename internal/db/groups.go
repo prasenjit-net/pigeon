@@ -172,6 +172,17 @@ func (s *gormGroupStore) ListUndeliveredResponses(inviterID string) ([]groups.Me
 	return toMembers(rows), nil
 }
 
+func (s *gormGroupStore) RemoveMember(groupID, userID string) error {
+	res := s.db.Delete(&GroupMember{}, "group_id = ? AND user_id = ?", groupID, userID)
+	if res.Error != nil {
+		return fmt.Errorf("groups: remove member: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return groups.ErrNotFound
+	}
+	return nil
+}
+
 // compile-time assertion
 var _ groups.Store = (*gormGroupStore)(nil)
 
